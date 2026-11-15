@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using UnityEditor.Build;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -22,14 +23,37 @@ public static class AdventureBuild
         if (!EditorSceneManager.SaveScene(scene, ScenePath))
             throw new Exception("No se pudo guardar la escena principal: " + ScenePath);
         AssetDatabase.Refresh();
+        RegisterMainScene();
         Debug.Log("Escena principal creada en " + ScenePath);
+    }
+
+    private static void RegisterMainScene()
+    {
+        var scene = AssetDatabase.LoadAssetAtPath<SceneAsset>("Assets/Scenes/Main.unity");
+        if (scene == null) throw new Exception("No se pudo cargar Assets/Scenes/Main.unity");
+        var scenes = new[] { new EditorBuildSettingsScene("Assets/Scenes/Main.unity", true) };
+        EditorBuildSettings.scenes = scenes;
+        if (!EditorBuildSettings.scenes[0].enabled)
+            throw new Exception("La escena principal no quedó habilitada para la compilación");
+    }
+
+    [MenuItem("Tools/Aventura/Forzar orientación horizontal")]
+    public static void SetLandscapeOrientation()
+    {
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
+        PlayerSettings.allowedAutorotateToPortrait = false;
+        PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+        PlayerSettings.allowedAutorotateToLandscapeLeft = true;
+        PlayerSettings.allowedAutorotateToLandscapeRight = true;
     }
 
     public static void BuildAndroid()
     {
+        SetLandscapeOrientation();
         Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
         Directory.CreateDirectory(Path.GetDirectoryName(ApkPath));
         CreateScene();
+        RegisterMainScene();
 
         EditorUserBuildSettings.buildAppBundle = false;
         EditorUserBuildSettings.androidBuildSystem = AndroidBuildSystem.Gradle;
