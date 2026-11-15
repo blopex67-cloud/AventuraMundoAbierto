@@ -17,6 +17,9 @@ public class WorldBootstrap : MonoBehaviour
     AudioSource ambienceSource, sfxSource, leftThreatAudio, rightThreatAudio;
     AudioClip ambienceClip, monsterGrowlClip, zombieGroanClip, doorSlamClip;
     Material wallMat, floorMat, metalMat, trimMat, eyeMat;
+    static Material fallbackSourceMaterial;
+    bool emergencyGroundCreated;
+    float verticalVelocity;
     string startupFailure;
     bool leftClosed, rightClosed, monitorOpen, lightOn, ended;
     float yaw, pitch = 2f, power = 100f, nightTimer, aiTimer, scareTime;
@@ -42,6 +45,7 @@ public class WorldBootstrap : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this; SetLandscape();
+        AddEmergencyGroundCollider();
         EnsureFallbackCamera();
     }
     void Start()
@@ -98,12 +102,55 @@ public class WorldBootstrap : MonoBehaviour
     }
     Material MakeMat(Color color, float metallic=0, float smooth=.25f, bool emission=false)
     {
-        Shader sh = Shader.Find("Standard"); if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
-        var m = new Material(sh); m.color = color;
+        Shader sh = Shader.Find("Standard");
+        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
+        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Simple Lit");
+        if (sh == null) sh = Shader.Find("Unlit/Color");
+        Material m;
+        if (sh != null)
+        {
+            m = new Material(sh);
+        }
+        else
+        {
+            // Do not call new Material(null): that was the startup exception shown
+            // in the user's screenshot. Copy Unity's own primitive fallback material.
+            if (fallbackSourceMaterial == null)
+            {
+                var sample = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                var sampleRenderer = sample.GetComponent<Renderer>();
+                if (sampleRenderer != null && sampleRenderer.sharedMaterial != null && sampleRenderer.sharedMaterial.shader != null)
+                    fallbackSourceMaterial = sampleRenderer.sharedMaterial;
+                Destroy(sample);
+            }
+            if (fallbackSourceMaterial == null || fallbackSourceMaterial.shader == null)
+            {
+                // Leave the primitive's built-in material untouched. Missing a shader
+                // must not abort world construction or prevent its colliders being built.
+                Debug.LogError("No se encontró un shader del proyecto; el escenario continuará con materiales predeterminados.");
+                return null;
+            }
+            m = new Material(fallbackSourceMaterial);
+            Debug.LogWarning("No se encontró Standard/URP shader; se usa el material predeterminado de Unity.");
+        }
+        m.color = color;
         if(m.HasProperty("_Metallic")) m.SetFloat("_Metallic", metallic);
         if(m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", smooth);
         if(emission && m.HasProperty("_EmissionColor")){m.EnableKeyword("_EMISSION");m.SetColor("_EmissionColor",color*1.7f);}
         return m;
+    }
+    void AddEmergencyGroundCollider()
+    {
+        if (emergencyGroundCreated) return;
+        emergencyGroundCreated = true;
+        // Keep a real collision surface even if constructing the visible office fails.
+        var ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        ground.name = "Emergency Ground Collision";
+        ground.transform.position = new Vector3(0, -.30f, 0);
+        ground.transform.localScale = new Vector3(100f, .5f, 100f);
+        var renderer = ground.GetComponent<Renderer>();
+        if (renderer != null) renderer.enabled = false;
+        ground.layer = 0;
     }
     GameObject Box(string name, Vector3 pos, Vector3 size, Material mat, bool collider=true, Transform parent=null)
     {
@@ -134,23 +181,23 @@ public class WorldBootstrap : MonoBehaviour
             Box("Hall outer wall",new Vector3(side*17,1.6f,1),new Vector3(.3f,3.4f,7),wallMat);
             Box("Hall rear wall",new Vector3(side*11,1.6f,-2.5f),new Vector3(12,3.4f,.3f),wallMat);
             Box("Hall front wall",new Vector3(side*11,1.6f,4.5f),new Vector3(12,3.4f,.3f),wallMat);
-            Box("Door frame",new Vector3(side*5,1.5f,1),new Vector3(.38f,3.05f,2.2f),metalMat,false);
+            Box("Door frame",new Vector3(side*5,1.5f,1),new Vector3(.38f,3.05f,2.2f),metalMat,true);
             var d=Box(side<0?"West security shutter":"East security shutter",new Vector3(side*4.88f,1.4f,1),new Vector3(.22f,2.8f,1.7f),metalMat);
             if(side<0)leftDoor=d.transform;else rightDoor=d.transform;
-            for(int j=0;j<3;j++)Box("Shutter rib",new Vector3(side*4.74f,.55f+j*.76f,1),new Vector3(.06f,.07f,1.62f),trimMat,false);
+            for(int j=0;j<3;j++)Box("Shutter rib",new Vector3(side*4.74f,.55f+j*.76f,1),new Vector3(.06f,.07f,1.62f),trimMat,true);
             // Emergency wall lights: simple emissive fixtures, no real-time point lights.
-            Box("Hall lamp housing",new Vector3(side*10,2.95f,1),new Vector3(.8f,.12f,.7f),trimMat,false);
-            var lamp=Box("Hall lamp",new Vector3(side*10,2.86f,1),new Vector3(.55f,.045f,.42f),MakeMat(new Color(.63f,.55f,.37f),0,.2f,true),false);
+            Box("Hall lamp housing",new Vector3(side*10,2.95f,1),new Vector3(.8f,.12f,.7f),trimMat,true);
+            var lamp=Box("Hall lamp",new Vector3(side*10,2.86f,1),new Vector3(.55f,.045f,.42f),MakeMat(new Color(.63f,.55f,.37f),0,.2f,true),true);
         }
         // Office props and silhouette-breaking geometry
         Box("Desk top",new Vector3(0,1.05f,2.15f),new Vector3(4.2f,.22f,1.35f),metalMat);
         Box("Desk front",new Vector3(0,.52f,2.72f),new Vector3(4.2f,.95f,.18f),trimMat);
         for(int x=-1;x<=1;x+=2)for(int z=-1;z<=1;z+=2)Box("Desk leg",new Vector3(x*1.8f,.28f,2.15f+z*.48f),new Vector3(.12f,.56f,.12f),metalMat);
-        Box("Monitor casing",new Vector3(0,1.85f,2.45f),new Vector3(1.8f,1.12f,.18f),trimMat,false);
-        Box("Monitor screen",new Vector3(0,1.86f,2.34f),new Vector3(1.58f,.83f,.035f),MakeMat(new Color(.035f,.10f,.12f),.12f,.18f,true),false);
+        Box("Monitor casing",new Vector3(0,1.85f,2.45f),new Vector3(1.8f,1.12f,.18f),trimMat,true);
+        Box("Monitor screen",new Vector3(0,1.86f,2.34f),new Vector3(1.58f,.83f,.035f),MakeMat(new Color(.035f,.10f,.12f),.12f,.18f,true),true);
         for(int i=0;i<5;i++)
         {
-            Box("Wall acoustic panel",new Vector3(-3.8f+i*1.9f,2.45f,-4.79f),new Vector3(1.4f,.75f,.1f),i%2==0?trimMat:metalMat,false);
+            Box("Wall acoustic panel",new Vector3(-3.8f+i*1.9f,2.45f,-4.79f),new Vector3(1.4f,.75f,.1f),i%2==0?trimMat:metalMat,true);
         }
         var lampLight=new GameObject("Office overhead light").AddComponent<Light>(); lampLight.type=LightType.Directional;lampLight.intensity=.42f;lampLight.color=new Color(.70f,.78f,1f);lampLight.transform.rotation=Quaternion.Euler(48,-25,0);lampLight.shadows=LightShadows.Hard;
         // Camera housings at corridor ends (visual navigation cues)
@@ -254,7 +301,18 @@ public class WorldBootstrap : MonoBehaviour
         if(Input.GetKey(KeyCode.A))x=-1;if(Input.GetKey(KeyCode.D))x=1;if(Input.GetKey(KeyCode.W))y=1;if(Input.GetKey(KeyCode.S))y=-1;
         Vector3 move=playerRoot.right*x+playerRoot.forward*y;
         if(move.sqrMagnitude>1)move.Normalize();
-        controller.Move(move*2.1f*Time.deltaTime+Vector3.down*2.2f*Time.deltaTime);
+        if (controller == null) return;
+        controller.detectCollisions = true;
+        controller.minMoveDistance = 0f;
+        if (controller.isGrounded && verticalVelocity < 0f) verticalVelocity = -2f;
+        verticalVelocity += Physics.gravity.y * Time.deltaTime;
+        controller.Move((move * 2.1f + Vector3.up * verticalVelocity) * Time.deltaTime);
+        if (playerRoot.position.y < -2f)
+        {
+            Debug.LogError("Player fell through collision surface; restoring player to the office.");
+            playerRoot.position = new Vector3(0,0,-1.2f);
+            verticalVelocity = 0f;
+        }
         playerRoot.position=new Vector3(Mathf.Clamp(playerRoot.position.x,-3.9f,3.9f),playerRoot.position.y,Mathf.Clamp(playerRoot.position.z,-3.7f,2.75f));
     }
     public void LookDrag(Vector2 delta){if(monitorOpen||ended)return;yaw+=delta.x*.18f;pitch=Mathf.Clamp(pitch-delta.y*.14f,-27,24);}
