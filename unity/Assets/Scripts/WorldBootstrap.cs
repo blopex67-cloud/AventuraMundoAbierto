@@ -304,6 +304,8 @@ public class WorldBootstrap : MonoBehaviour
         // Touching open screen space rotates the view; buttons and joystick sit above this layer.
         var look=Panel(hudRoot,new Vector2(.2f,0),Vector2.zero,new Vector2(520,540),new Color(0,0,0,.001f));
         var lookRect=look.GetComponent<RectTransform>();lookRect.anchorMin=new Vector2(.20f,.12f);lookRect.anchorMax=new Vector2(.70f,.88f);lookRect.offsetMin=Vector2.zero;lookRect.offsetMax=Vector2.zero;look.GetComponent<Image>().raycastTarget=true;look.AddComponent<TouchLookArea>();
+        // Subtle screen grain is layered over the 3D view only; UI controls are drawn above it.
+        var grain=Panel(hudRoot,new Vector2(.5f,.5f),Vector2.zero,new Vector2(0,0),new Color(1,1,1,.025f));var grainRect=grain.GetComponent<RectTransform>();grainRect.anchorMin=new Vector2(.18f,.10f);grainRect.anchorMax=new Vector2(.78f,.90f);grainRect.offsetMin=Vector2.zero;grainRect.offsetMax=Vector2.zero;var grainImage=grain.GetComponent<Image>();grainImage.sprite=GetFilmGrainSprite();grainImage.type=Image.Type.Simple;grainImage.raycastTarget=false;filmGrainOverlay=grainImage;
         var statusCard=Panel(hudRoot,new Vector2(0,1),new Vector2(18,-18),new Vector2(188,64),new Color(.025f,.035f,.05f,.88f));statusCard.GetComponent<Image>().raycastTarget=false;
         animatronicTurnText=AnchoredLabel(hudRoot,"DE TURNO: THE WARDEN",14,TextAnchor.UpperCenter,new Vector2(.5f,1),new Vector2(0,-75),new Vector2(360,28));
         statusText=AnchoredLabel(statusCard.transform,"12:00 AM\nNOCHE 1",20,TextAnchor.MiddleLeft,new Vector2(0,1),new Vector2(12,-8),new Vector2(164,48));
@@ -325,7 +327,6 @@ public class WorldBootstrap : MonoBehaviour
         var stickObj=Panel(hudRoot,new Vector2(0,0),new Vector2(22,22),new Vector2(142,142),new Color(.04f,.07f,.10f,.78f));var stickImage=stickObj.GetComponent<Image>();stickImage.sprite=GetCircularControlSprite();stickImage.type=Image.Type.Simple;stickImage.raycastTarget=true;moveStick=stickObj.AddComponent<SimpleTouchStick>();
         var knob=Panel(stickObj.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(58,58),new Color(.7f,.8f,.9f,.90f));var knobImage=knob.GetComponent<Image>();knobImage.sprite=GetCircularControlSprite();knobImage.type=Image.Type.Simple;knobImage.raycastTarget=false;moveStick.knob=knob.GetComponent<RectTransform>();
         AnchoredLabel(hudRoot,"MOVER",13,TextAnchor.LowerLeft,new Vector2(0,0),new Vector2(27,172),new Vector2(132,22));
-        var grain=Panel(hudRoot,new Vector2(.5f,.5f),Vector2.zero,new Vector2(0,0),new Color(1,1,1,.025f));var grainRect=grain.GetComponent<RectTransform>();grainRect.anchorMin=Vector2.zero;grainRect.anchorMax=Vector2.one;grainRect.offsetMin=Vector2.zero;grainRect.offsetMax=Vector2.zero;var grainImage=grain.GetComponent<Image>();grainImage.sprite=GetFilmGrainSprite();grainImage.type=Image.Type.Simple;grainImage.raycastTarget=false;filmGrainOverlay=grainImage;grain.transform.SetAsLastSibling();
         hud.SetActive(false);
         startOverlay=Panel(canvas.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.015f,.025f,.04f,.98f));
         var full=startOverlay.GetComponent<RectTransform>();full.anchorMin=Vector2.zero;full.anchorMax=Vector2.one;full.offsetMin=Vector2.zero;full.offsetMax=Vector2.zero;
