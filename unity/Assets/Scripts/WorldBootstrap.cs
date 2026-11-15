@@ -13,11 +13,12 @@ public class WorldBootstrap : MonoBehaviour
     SimpleTouchStick moveStick;
     Text statusText, cameraText, messageText;
     Image powerFill, monitorShade;
-    Button leftDoorButton, rightDoorButton, monitorButton, lightButton;
+    Button leftDoorButton, rightDoorButton, monitorButton, lightButton, nextCameraButton;
     AudioSource ambienceSource, sfxSource, leftThreatAudio, rightThreatAudio;
     AudioClip ambienceClip, monsterGrowlClip, zombieGroanClip, doorSlamClip;
     Material wallMat, floorMat, metalMat, trimMat, eyeMat;
     static Material fallbackSourceMaterial;
+    static Texture2D tileNoiseTexture;
     bool emergencyGroundCreated;
     float verticalVelocity;
     string startupFailure;
@@ -102,42 +103,51 @@ public class WorldBootstrap : MonoBehaviour
     }
     Material MakeMat(Color color, float metallic=0, float smooth=.25f, bool emission=false)
     {
-        Shader sh = Shader.Find("Standard");
+        // Prefer serialized Resources anchors: runtime Shader.Find alone lets Unity
+        // strip Standard/URP shaders from Android builds, producing bright magenta.
+        if (fallbackSourceMaterial == null)
+        {
+            var anchor = Resources.Load<Material>("RuntimeShaders/StandardAnchor");
+            if (anchor == null) anchor = Resources.Load<Material>("RuntimeShaders/UnlitAnchor");
+            if (anchor != null && anchor.shader != null) fallbackSourceMaterial = anchor;
+        }
+        Shader sh = fallbackSourceMaterial != null ? fallbackSourceMaterial.shader : null;
+        if (sh == null) sh = Shader.Find("Standard");
         if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
         if (sh == null) sh = Shader.Find("Universal Render Pipeline/Simple Lit");
         if (sh == null) sh = Shader.Find("Unlit/Color");
-        Material m;
-        if (sh != null)
+        if (sh == null)
         {
-            m = new Material(sh);
+            Debug.LogError("No hay shader de materiales incluido. Mantengo material predeterminado; revisa RuntimeShaders.");
+            return null;
         }
-        else
-        {
-            // Do not call new Material(null): that was the startup exception shown
-            // in the user's screenshot. Copy Unity's own primitive fallback material.
-            if (fallbackSourceMaterial == null)
-            {
-                var sample = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                var sampleRenderer = sample.GetComponent<Renderer>();
-                if (sampleRenderer != null && sampleRenderer.sharedMaterial != null && sampleRenderer.sharedMaterial.shader != null)
-                    fallbackSourceMaterial = sampleRenderer.sharedMaterial;
-                Destroy(sample);
-            }
-            if (fallbackSourceMaterial == null || fallbackSourceMaterial.shader == null)
-            {
-                // Leave the primitive's built-in material untouched. Missing a shader
-                // must not abort world construction or prevent its colliders being built.
-                Debug.LogError("No se encontró un shader del proyecto; el escenario continuará con materiales predeterminados.");
-                return null;
-            }
-            m = new Material(fallbackSourceMaterial);
-            Debug.LogWarning("No se encontró Standard/URP shader; se usa el material predeterminado de Unity.");
-        }
+        var m = new Material(sh);
         m.color = color;
         if(m.HasProperty("_Metallic")) m.SetFloat("_Metallic", metallic);
         if(m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", smooth);
+        if(m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", smooth);
+        // Small tileable grain prevents the office materials from looking flat.
+        if (tileNoiseTexture == null) tileNoiseTexture = CreateTileNoise();
+        if (tileNoiseTexture != null)
+        {
+            if(m.HasProperty("_MainTex")) m.SetTexture("_MainTex", tileNoiseTexture);
+            if(m.HasProperty("_BaseMap")) m.SetTexture("_BaseMap", tileNoiseTexture);
+        }
         if(emission && m.HasProperty("_EmissionColor")){m.EnableKeyword("_EMISSION");m.SetColor("_EmissionColor",color*1.7f);}
         return m;
+    }
+    Texture2D CreateTileNoise()
+    {
+        const int size=64;
+        var texture=new Texture2D(size,size,TextureFormat.RGB24,false,true);
+        texture.name="Runtime subtle surface grain";
+        texture.wrapMode=TextureWrapMode.Repeat;
+        texture.filterMode=FilterMode.Bilinear;
+        var pixels=new Color[size*size];
+        var rng=new System.Random(1741);
+        for(int i=0;i<pixels.Length;i++){float v=.84f+(float)rng.NextDouble()*.30f;pixels[i]=new Color(v,v,v,1);}
+        texture.SetPixels(pixels);texture.Apply(false,true);
+        return texture;
     }
     void AddEmergencyGroundCollider()
     {
@@ -248,24 +258,25 @@ public class WorldBootstrap : MonoBehaviour
     {
         var eventObj=new GameObject("Touch Event System");eventObj.AddComponent<EventSystem>();eventObj.AddComponent<StandaloneInputModule>();
         var canvasObj=new GameObject("Nightwatch HUD");var canvas=canvasObj.AddComponent<Canvas>();canvas.renderMode=RenderMode.ScreenSpaceOverlay;canvasObj.AddComponent<CanvasScaler>().uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;canvasObj.GetComponent<CanvasScaler>().referenceResolution=new Vector2(960,540);canvasObj.AddComponent<GraphicRaycaster>();
-        statusText=Label(canvas.transform,"12:00 AM\nNIGHT 1",22,TextAnchor.UpperLeft,new Vector2(25,-20),new Vector2(210,70));
+        // Touching open screen space rotates the view; buttons and joystick sit above this layer.
+        var look=Panel(canvas.transform,new Vector2(.18f,0),Vector2.zero,new Vector2(600,540),new Color(0,0,0,.001f));
+        var lookRect=look.GetComponent<RectTransform>();lookRect.anchorMin=Vector2.zero;lookRect.anchorMax=Vector2.one;lookRect.offsetMin=Vector2.zero;lookRect.offsetMax=Vector2.zero;look.GetComponent<Image>().raycastTarget=true;look.AddComponent<TouchLookArea>();
+        statusText=Label(canvas.transform,"12:00 AM\nNOCHE 1",22,TextAnchor.UpperLeft,new Vector2(25,-20),new Vector2(210,70));
         var powerBack=Panel(canvas.transform,new Vector2(1,0),new Vector2(-25,24),new Vector2(220,34),new Color(.02f,.03f,.04f,.8f));powerFill=Panel(powerBack.transform,new Vector2(0,0),new Vector2(3,3),new Vector2(210,24),new Color(.3f,.85f,.46f,.95f)).GetComponent<Image>();
         Label(canvas.transform,"ENERGÍA",15,TextAnchor.LowerRight,new Vector2(-25,64),new Vector2(220,26));
         cameraText=Label(canvas.transform,"",18,TextAnchor.UpperCenter,new Vector2(0,-18),new Vector2(520,45));cameraText.gameObject.SetActive(false);
         messageText=Label(canvas.transform,"",26,TextAnchor.MiddleCenter,Vector2.zero,new Vector2(620,180));messageText.gameObject.SetActive(false);
         monitorShade=Panel(canvas.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.02f,.08f,.09f,.28f)).GetComponent<Image>();monitorShade.gameObject.SetActive(false);
-        // Look gesture area is created before buttons so controls stay tappable above it.
-        var look=Panel(canvas.transform,new Vector2(1,0),new Vector2(-250,100),new Vector2(400,330),new Color(0,0,0,.01f));look.AddComponent<TouchLookArea>();
-        // Right-side buttons: doors, light and surveillance tablet.
-        leftDoorButton=MakeButton(canvas.transform,"PUERTA OESTE",new Vector2(1,0),new Vector2(-235,165),new Vector2(205,68),ToggleLeftDoor);
-        rightDoorButton=MakeButton(canvas.transform,"PUERTA ESTE",new Vector2(1,0),new Vector2(-20,165),new Vector2(205,68),ToggleRightDoor);
-        lightButton=MakeButton(canvas.transform,"LUZ",new Vector2(1,0),new Vector2(-235,88),new Vector2(205,62),ToggleLight);
-        monitorButton=MakeButton(canvas.transform,"CÁMARAS",new Vector2(.5f,0),new Vector2(0,18),new Vector2(230,70),ToggleMonitor);
-        MakeButton(canvas.transform,"SIGUIENTE CAM",new Vector2(.5f,0),new Vector2(0,98),new Vector2(230,58),NextCamera);
-        // Joystick left bottom
-        var stickObj=Panel(canvas.transform,new Vector2(0,0),new Vector2(38,34),new Vector2(156,156),new Color(.08f,.12f,.16f,.48f));moveStick=stickObj.AddComponent<SimpleTouchStick>();
-        var knob=Panel(stickObj.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(62,62),new Color(.7f,.8f,.9f,.55f));moveStick.knob=knob.GetComponent<RectTransform>();
-        Label(canvas.transform,"MOVER",14,TextAnchor.LowerLeft,new Vector2(49,195),new Vector2(130,25));
+        // Compact two-column control dock in the bottom-right, with clear gaps.
+        leftDoorButton=MakeButton(canvas.transform,"PUERTA OESTE",new Vector2(1,0),new Vector2(-405,128),new Vector2(184,58),ToggleLeftDoor);
+        rightDoorButton=MakeButton(canvas.transform,"PUERTA ESTE",new Vector2(1,0),new Vector2(-207,128),new Vector2(184,58),ToggleRightDoor);
+        lightButton=MakeButton(canvas.transform,"LINTERNA",new Vector2(1,0),new Vector2(-405,58),new Vector2(184,58),ToggleLight);
+        monitorButton=MakeButton(canvas.transform,"CÁMARAS",new Vector2(1,0),new Vector2(-207,58),new Vector2(184,58),ToggleMonitor);
+        nextCameraButton=MakeButton(canvas.transform,"SIGUIENTE CÁMARA",new Vector2(1,0),new Vector2(-207,198),new Vector2(184,52),NextCamera);nextCameraButton.gameObject.SetActive(false);
+        // Movement stick stays in its own lower-left zone, away from camera look and action buttons.
+        var stickObj=Panel(canvas.transform,new Vector2(0,0),new Vector2(34,30),new Vector2(142,142),new Color(.08f,.12f,.16f,.48f));moveStick=stickObj.AddComponent<SimpleTouchStick>();
+        var knob=Panel(stickObj.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(58,58),new Color(.7f,.8f,.9f,.65f));moveStick.knob=knob.GetComponent<RectTransform>();
+        Label(canvas.transform,"MOVER",14,TextAnchor.LowerLeft,new Vector2(43,180),new Vector2(130,25));
     }
     Text Label(Transform parent,string text,int size,TextAnchor align,Vector2 pos,Vector2 sizeDelta)
     {var o=new GameObject("Text");o.transform.SetParent(parent,false);var t=o.AddComponent<Text>();t.font=Resources.GetBuiltinResource<Font>("Arial.ttf");t.text=text;t.fontSize=size;t.color=Color.white;t.alignment=align;t.raycastTarget=false;var r=t.rectTransform;r.anchorMin=new Vector2(0,1);r.anchorMax=new Vector2(0,1);r.pivot=new Vector2(0,1);r.anchoredPosition=pos;r.sizeDelta=sizeDelta;return t;}
@@ -278,7 +289,7 @@ public class WorldBootstrap : MonoBehaviour
     void ToggleRightDoor(){if(!ended){rightClosed=!rightClosed;PlayDoorSound();}}
     void PlayDoorSound(){if(sfxSource&&doorSlamClip)sfxSource.PlayOneShot(doorSlamClip,.45f);}
     void ToggleLight(){if(!ended&&power>0){lightOn=!lightOn;if(flashlight)flashlight.enabled=lightOn;}}
-    void ToggleMonitor(){if(!ended&&power>0){monitorOpen=!monitorOpen;cameraText.gameObject.SetActive(monitorOpen);monitorShade.gameObject.SetActive(monitorOpen);}}
+    void ToggleMonitor(){if(!ended&&power>0){monitorOpen=!monitorOpen;cameraText.gameObject.SetActive(monitorOpen);monitorShade.gameObject.SetActive(monitorOpen);if(nextCameraButton)nextCameraButton.gameObject.SetActive(monitorOpen);}}
     void NextCamera(){if(monitorOpen){cameraIndex=(cameraIndex+1)%cameraNames.Length;cameraText.text=cameraNames[cameraIndex];}}
 
     void Update()
@@ -315,7 +326,7 @@ public class WorldBootstrap : MonoBehaviour
         }
         playerRoot.position=new Vector3(Mathf.Clamp(playerRoot.position.x,-3.9f,3.9f),playerRoot.position.y,Mathf.Clamp(playerRoot.position.z,-3.7f,2.75f));
     }
-    public void LookDrag(Vector2 delta){if(monitorOpen||ended)return;yaw+=delta.x*.18f;pitch=Mathf.Clamp(pitch-delta.y*.14f,-27,24);}
+    public void LookDrag(Vector2 delta){if(monitorOpen||ended)return;yaw+=delta.x*.20f;pitch=Mathf.Clamp(pitch-delta.y*.16f,-35,35);}
     void UpdateCamera()
     {
         if(monitorOpen){var p=cameraPositions[cameraIndex];gameCamera.transform.position=p;Vector3 focus=cameraIndex==1?new Vector3(-5,1,1):cameraIndex==2?new Vector3(5,1,1):new Vector3(0,1,0);gameCamera.transform.rotation=Quaternion.LookRotation(focus-p,Vector3.up);gameCamera.fieldOfView=58;}
@@ -358,9 +369,10 @@ public class SimpleTouchStick : MonoBehaviour,IPointerDownHandler,IDragHandler,I
     public void OnDrag(PointerEventData e){Vector2 local;if(RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)transform,e.position,e.pressEventCamera,out local)){Vector2 d=Vector2.ClampMagnitude(local-center,53);Axis=d/53;if(knob)knob.anchoredPosition=d;}}
     public void OnPointerUp(PointerEventData e){Axis=Vector2.zero;if(knob)knob.anchoredPosition=Vector2.zero;}
 }
-public class TouchLookArea:MonoBehaviour,IPointerDownHandler,IDragHandler
+public class TouchLookArea:MonoBehaviour,IPointerDownHandler,IDragHandler,IPointerUpHandler
 {
-    Vector2 last;bool held;
-    public void OnPointerDown(PointerEventData e){last=e.position;held=true;}
-    public void OnDrag(PointerEventData e){if(!held)return;Vector2 d=e.position-last;last=e.position;if(WorldBootstrap.Instance)WorldBootstrap.Instance.LookDrag(d);}
+    Vector2 last;int activePointer=int.MinValue;
+    public void OnPointerDown(PointerEventData e){activePointer=e.pointerId;last=e.position;}
+    public void OnDrag(PointerEventData e){if(e.pointerId!=activePointer)return;Vector2 d=e.position-last;last=e.position;if(WorldBootstrap.Instance)WorldBootstrap.Instance.LookDrag(d);}
+    public void OnPointerUp(PointerEventData e){if(e.pointerId==activePointer)activePointer=int.MinValue;}
 }
