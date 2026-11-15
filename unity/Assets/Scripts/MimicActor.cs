@@ -236,7 +236,7 @@ public sealed class MimicActor : MonoBehaviour
             {
                 if (state.name.ToLowerInvariant().Contains(search))
                 {
-                    state.wrapMode = WrapMode.Loop;
+                    state.wrapMode = search == "jumpscarefront" ? WrapMode.Once : WrapMode.Loop;
                     if (!animation.IsPlaying(state.name)) animation.Play(state.name);
                     return;
                 }
