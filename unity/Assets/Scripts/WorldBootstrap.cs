@@ -7,22 +7,26 @@ public class WorldBootstrap : MonoBehaviour
 {
     public static WorldBootstrap Instance;
     CharacterController controller;
-    Transform playerRoot, cameraRig, leftDoor, rightDoor, leftThreat, rightThreat;
+    Transform playerRoot, cameraRig, leftThreat, rightThreat;
     Camera gameCamera;
     Light flashlight;
     SimpleTouchStick moveStick;
-    Text statusText, cameraText, messageText;
+    Text statusText, cameraText, messageText, missionText;
     Image powerFill, monitorShade;
-    Button leftDoorButton, rightDoorButton, monitorButton, lightButton, nextCameraButton;
+    Button monitorButton, lightButton, nextCameraButton;
+    GameObject startOverlay, gameplayHud;
+    Text startTitle, startDescription;
+    Button startButton;
+    bool gameStarted, objectiveCamera, objectiveLight;
     AudioSource ambienceSource, sfxSource, leftThreatAudio, rightThreatAudio;
-    AudioClip ambienceClip, monsterGrowlClip, zombieGroanClip, doorSlamClip;
+    AudioClip ambienceClip, monsterGrowlClip, zombieGroanClip;
     Material wallMat, floorMat, metalMat, trimMat, eyeMat;
     static Material fallbackSourceMaterial;
     static Texture2D tileNoiseTexture;
     bool emergencyGroundCreated;
     float verticalVelocity;
     string startupFailure;
-    bool leftClosed, rightClosed, monitorOpen, lightOn, ended;
+    bool monitorOpen, lightOn, ended;
     float yaw, pitch = 2f, power = 100f, nightTimer, aiTimer, scareTime;
     int cameraIndex = 0;
     const float NightLength = 240f;
@@ -191,10 +195,6 @@ public class WorldBootstrap : MonoBehaviour
             Box("Hall outer wall",new Vector3(side*17,1.6f,1),new Vector3(.3f,3.4f,7),wallMat);
             Box("Hall rear wall",new Vector3(side*11,1.6f,-2.5f),new Vector3(12,3.4f,.3f),wallMat);
             Box("Hall front wall",new Vector3(side*11,1.6f,4.5f),new Vector3(12,3.4f,.3f),wallMat);
-            Box("Door frame",new Vector3(side*5,1.5f,1),new Vector3(.38f,3.05f,2.2f),metalMat,true);
-            var d=Box(side<0?"West security shutter":"East security shutter",new Vector3(side*4.88f,1.4f,1),new Vector3(.22f,2.8f,1.7f),metalMat);
-            if(side<0)leftDoor=d.transform;else rightDoor=d.transform;
-            for(int j=0;j<3;j++)Box("Shutter rib",new Vector3(side*4.74f,.55f+j*.76f,1),new Vector3(.06f,.07f,1.62f),trimMat,true);
             // Emergency wall lights: simple emissive fixtures, no real-time point lights.
             Box("Hall lamp housing",new Vector3(side*10,2.95f,1),new Vector3(.8f,.12f,.7f),trimMat,true);
             var lamp=Box("Hall lamp",new Vector3(side*10,2.86f,1),new Vector3(.55f,.045f,.42f),MakeMat(new Color(.63f,.55f,.37f),0,.2f,true),true);
@@ -232,13 +232,12 @@ public class WorldBootstrap : MonoBehaviour
         var actor=root.gameObject.AddComponent<MimicActor>();actor.modelFile="the_mimic_dlc.glb";actor.modelScale=1f;
         return root;
     }
-    void BuildThreats(){leftThreat=MakeThreat("The Warden",new Color(.24f,.29f,.31f),new Vector3(-15,0,1));rightThreat=MakeThreat("The Brass Guest",new Color(.30f,.22f,.13f),new Vector3(15,0,1));}
+    void BuildThreats(){leftThreat=MakeThreat("The Warden",new Color(.24f,.29f,.31f),new Vector3(-23,0,1));rightThreat=MakeThreat("The Brass Guest",new Color(.30f,.22f,.13f),new Vector3(23,0,1));}
     void BuildAudio()
     {
         ambienceClip=Resources.Load<AudioClip>("Audio/CC0/DarkDrone");
         monsterGrowlClip=Resources.Load<AudioClip>("Audio/CC0/MonsterGrowl");
         zombieGroanClip=Resources.Load<AudioClip>("Audio/CC0/ZombieGroan");
-        doorSlamClip=Resources.Load<AudioClip>("Audio/CC0/HauntedDoorSlam");
         var ambienceObject=new GameObject("CC0 horror ambience");ambienceObject.transform.SetParent(transform,false);
         ambienceSource=ambienceObject.AddComponent<AudioSource>();ambienceSource.clip=ambienceClip;ambienceSource.loop=true;ambienceSource.volume=.12f;ambienceSource.spatialBlend=0;
         if(ambienceClip)ambienceSource.Play();
@@ -257,27 +256,36 @@ public class WorldBootstrap : MonoBehaviour
     void BuildHUD()
     {
         var eventObj=new GameObject("Touch Event System");eventObj.AddComponent<EventSystem>();eventObj.AddComponent<StandaloneInputModule>();
-        var canvasObj=new GameObject("Nightwatch HUD");var canvas=canvasObj.AddComponent<Canvas>();canvas.renderMode=RenderMode.ScreenSpaceOverlay;canvasObj.AddComponent<CanvasScaler>().uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;canvasObj.GetComponent<CanvasScaler>().referenceResolution=new Vector2(960,540);canvasObj.AddComponent<GraphicRaycaster>();
+        var canvasObj=new GameObject("Nightwatch HUD");var canvas=canvasObj.AddComponent<Canvas>();canvas.renderMode=RenderMode.ScreenSpaceOverlay;canvasObj.AddComponent<CanvasScaler>().uiScaleMode=CanvasScaler.ScaleWithScreenSize;canvasObj.GetComponent<CanvasScaler>().referenceResolution=new Vector2(960,540);canvasObj.GetComponent<CanvasScaler>().matchWidthOrHeight=.5f;canvasObj.AddComponent<GraphicRaycaster>();
+        var hud=new GameObject("Gameplay Interface");hud.transform.SetParent(canvas.transform,false);gameplayHud=hud;Transform hudRoot=hud.transform;
         // Touching open screen space rotates the view; buttons and joystick sit above this layer.
-        var look=Panel(canvas.transform,new Vector2(.18f,0),Vector2.zero,new Vector2(600,540),new Color(0,0,0,.001f));
-        var lookRect=look.GetComponent<RectTransform>();lookRect.anchorMin=Vector2.zero;lookRect.anchorMax=Vector2.one;lookRect.offsetMin=Vector2.zero;lookRect.offsetMax=Vector2.zero;look.GetComponent<Image>().raycastTarget=true;look.AddComponent<TouchLookArea>();
-        statusText=Label(canvas.transform,"12:00 AM\nNOCHE 1",22,TextAnchor.UpperLeft,new Vector2(25,-20),new Vector2(210,70));
-        var powerBack=Panel(canvas.transform,new Vector2(1,0),new Vector2(-25,24),new Vector2(220,34),new Color(.02f,.03f,.04f,.8f));powerFill=Panel(powerBack.transform,new Vector2(0,0),new Vector2(3,3),new Vector2(210,24),new Color(.3f,.85f,.46f,.95f)).GetComponent<Image>();
-        Label(canvas.transform,"ENERGÍA",15,TextAnchor.LowerRight,new Vector2(-25,64),new Vector2(220,26));
-        cameraText=Label(canvas.transform,"",18,TextAnchor.UpperCenter,new Vector2(0,-18),new Vector2(520,45));cameraText.gameObject.SetActive(false);
-        messageText=Label(canvas.transform,"",26,TextAnchor.MiddleCenter,Vector2.zero,new Vector2(620,180));messageText.gameObject.SetActive(false);
-        monitorShade=Panel(canvas.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.02f,.08f,.09f,.28f)).GetComponent<Image>();monitorShade.gameObject.SetActive(false);
-        // Compact two-column control dock in the bottom-right, with clear gaps.
-        leftDoorButton=MakeButton(canvas.transform,"PUERTA OESTE",new Vector2(1,0),new Vector2(-405,128),new Vector2(184,58),ToggleLeftDoor);
-        rightDoorButton=MakeButton(canvas.transform,"PUERTA ESTE",new Vector2(1,0),new Vector2(-207,128),new Vector2(184,58),ToggleRightDoor);
-        lightButton=MakeButton(canvas.transform,"LINTERNA",new Vector2(1,0),new Vector2(-405,58),new Vector2(184,58),ToggleLight);
-        monitorButton=MakeButton(canvas.transform,"CÁMARAS",new Vector2(1,0),new Vector2(-207,58),new Vector2(184,58),ToggleMonitor);
-        nextCameraButton=MakeButton(canvas.transform,"SIGUIENTE CÁMARA",new Vector2(1,0),new Vector2(-207,198),new Vector2(184,52),NextCamera);nextCameraButton.gameObject.SetActive(false);
+        var look=Panel(hudRoot,new Vector2(.2f,0),Vector2.zero,new Vector2(520,540),new Color(0,0,0,.001f));
+        var lookRect=look.GetComponent<RectTransform>();lookRect.anchorMin=new Vector2(.2f,0);lookRect.anchorMax=new Vector2(.76f,1);lookRect.offsetMin=Vector2.zero;lookRect.offsetMax=Vector2.zero;look.GetComponent<Image>().raycastTarget=true;look.AddComponent<TouchLookArea>();
+        statusText=Label(hudRoot,"12:00 AM\nNOCHE 1",22,TextAnchor.UpperLeft,new Vector2(25,-20),new Vector2(210,70));
+        var powerBack=Panel(hudRoot,new Vector2(1,0),new Vector2(-25,24),new Vector2(220,34),new Color(.02f,.03f,.04f,.8f));powerFill=Panel(powerBack.transform,new Vector2(0,0),new Vector2(3,3),new Vector2(210,24),new Color(.3f,.85f,.46f,.95f)).GetComponent<Image>();
+        Label(hudRoot,"ENERGÍA",15,TextAnchor.LowerRight,new Vector2(-25,64),new Vector2(220,26));
+        cameraText=Label(hudRoot,"",18,TextAnchor.UpperCenter,new Vector2(0,-18),new Vector2(520,45));cameraText.gameObject.SetActive(false);
+        messageText=Label(hudRoot,"",26,TextAnchor.MiddleCenter,Vector2.zero,new Vector2(620,180));messageText.gameObject.SetActive(false);
+        monitorShade=Panel(hudRoot,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.02f,.08f,.09f,.28f)).GetComponent<Image>();monitorShade.raycastTarget=false;monitorShade.gameObject.SetActive(false);
+        // Two large, separated action controls at lower right. No doors in this game.
+        lightButton=MakeButton(hudRoot,"LINTERNA",new Vector2(1,0),new Vector2(-250,42),new Vector2(190,66),ToggleLight);
+        monitorButton=MakeButton(hudRoot,"CÁMARAS",new Vector2(1,0),new Vector2(-42,42),new Vector2(190,66),ToggleMonitor);
+        nextCameraButton=MakeButton(hudRoot,"CAMBIAR CÁMARA",new Vector2(1,0),new Vector2(-42,122),new Vector2(190,54),NextCamera);nextCameraButton.gameObject.SetActive(false);
+        missionText=AnchoredLabel(hudRoot,"OBJETIVOS\n□ Revisa las cámaras\n□ Usa la linterna\n□ Sobrevive hasta las 6 AM",17,TextAnchor.UpperRight,new Vector2(1,1),new Vector2(-24,-20),new Vector2(360,120));
         // Movement stick stays in its own lower-left zone, away from camera look and action buttons.
-        var stickObj=Panel(canvas.transform,new Vector2(0,0),new Vector2(34,30),new Vector2(142,142),new Color(.08f,.12f,.16f,.48f));moveStick=stickObj.AddComponent<SimpleTouchStick>();
+        var stickObj=Panel(hudRoot,new Vector2(0,0),new Vector2(34,30),new Vector2(142,142),new Color(.08f,.12f,.16f,.48f));moveStick=stickObj.AddComponent<SimpleTouchStick>();
         var knob=Panel(stickObj.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(58,58),new Color(.7f,.8f,.9f,.65f));moveStick.knob=knob.GetComponent<RectTransform>();
-        Label(canvas.transform,"MOVER",14,TextAnchor.LowerLeft,new Vector2(43,180),new Vector2(130,25));
+        Label(hudRoot,"MOVER",14,TextAnchor.LowerLeft,new Vector2(43,180),new Vector2(130,25));
+        hud.SetActive(false);
+        startOverlay=Panel(canvas.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.015f,.025f,.04f,.98f));
+        var full=startOverlay.GetComponent<RectTransform>();full.anchorMin=Vector2.zero;full.anchorMax=Vector2.one;full.offsetMin=Vector2.zero;full.offsetMax=Vector2.zero;
+        startTitle=AnchoredLabel(startOverlay.transform,"NOCHE DE VIGILANCIA",36,TextAnchor.MiddleCenter,new Vector2(.5f,.5f),new Vector2(0,-30),new Vector2(800,65));
+        startDescription=AnchoredLabel(startOverlay.transform,"Sobrevive hasta las 6 AM.\nRevisa las cámaras, usa la linterna y vigila los pasillos.\nArrastra la pantalla para mirar; usa el control izquierdo para moverte.",20,TextAnchor.MiddleCenter,new Vector2(.5f,.5f),new Vector2(0,-115),new Vector2(780,110));
+        startButton=MakeButton(startOverlay.transform,"INICIAR MISIÓN",new Vector2(.5f,.5f),new Vector2(0,95),new Vector2(270,72),StartMission);
+        UpdateStartScreen();
     }
+    Text AnchoredLabel(Transform parent,string text,int size,TextAnchor align,Vector2 anchor,Vector2 pos,Vector2 sizeDelta)
+    {var t=Label(parent,text,size,align,pos,sizeDelta);var r=t.rectTransform;r.anchorMin=anchor;r.anchorMax=anchor;r.pivot=anchor;r.anchoredPosition=pos;r.sizeDelta=sizeDelta;return t;}
     Text Label(Transform parent,string text,int size,TextAnchor align,Vector2 pos,Vector2 sizeDelta)
     {var o=new GameObject("Text");o.transform.SetParent(parent,false);var t=o.AddComponent<Text>();t.font=Resources.GetBuiltinResource<Font>("Arial.ttf");t.text=text;t.fontSize=size;t.color=Color.white;t.alignment=align;t.raycastTarget=false;var r=t.rectTransform;r.anchorMin=new Vector2(0,1);r.anchorMax=new Vector2(0,1);r.pivot=new Vector2(0,1);r.anchoredPosition=pos;r.sizeDelta=sizeDelta;return t;}
     GameObject Panel(Transform parent,Vector2 anchor,Vector2 pos,Vector2 size,Color color)
@@ -285,11 +293,28 @@ public class WorldBootstrap : MonoBehaviour
     Button MakeButton(Transform parent,string text,Vector2 anchor,Vector2 pos,Vector2 size,UnityEngine.Events.UnityAction action)
     {var o=Panel(parent,anchor,pos,size,new Color(.055f,.075f,.09f,.88f));var b=o.AddComponent<Button>();b.targetGraphic=o.GetComponent<Image>();b.onClick.AddListener(action);var t=Label(o.transform,text,16,TextAnchor.MiddleCenter,Vector2.zero,size- new Vector2(14,8));var r=t.rectTransform;r.anchorMin=Vector2.zero;r.anchorMax=Vector2.one;r.pivot=new Vector2(.5f,.5f);r.anchoredPosition=Vector2.zero;return b;}
 
-    void ToggleLeftDoor(){if(!ended){leftClosed=!leftClosed;PlayDoorSound();}}
-    void ToggleRightDoor(){if(!ended){rightClosed=!rightClosed;PlayDoorSound();}}
-    void PlayDoorSound(){if(sfxSource&&doorSlamClip)sfxSource.PlayOneShot(doorSlamClip,.45f);}
-    void ToggleLight(){if(!ended&&power>0){lightOn=!lightOn;if(flashlight)flashlight.enabled=lightOn;}}
-    void ToggleMonitor(){if(!ended&&power>0){monitorOpen=!monitorOpen;cameraText.gameObject.SetActive(monitorOpen);monitorShade.gameObject.SetActive(monitorOpen);if(nextCameraButton)nextCameraButton.gameObject.SetActive(monitorOpen);}}
+    void StartMission()
+    {
+        if(ended){RestartMission();return;}
+        gameStarted=true;
+        if(startOverlay)startOverlay.SetActive(false);
+        if(gameplayHud)gameplayHud.SetActive(true);
+        UpdateMissions();
+    }
+    void RestartMission()
+    {
+        nightTimer=0;aiTimer=0;power=100;ended=false;monitorOpen=false;lightOn=false;objectiveCamera=false;objectiveLight=false;verticalVelocity=0;
+        if(leftThreat)leftThreat.position=new Vector3(-23,0,1);if(rightThreat)rightThreat.position=new Vector3(23,0,1);
+        if(ambienceSource&&ambienceClip&&!ambienceSource.isPlaying)ambienceSource.Play();
+        if(flashlight)flashlight.enabled=false;
+        if(messageText)messageText.gameObject.SetActive(false);
+        if(startOverlay)startOverlay.SetActive(false);
+        if(gameplayHud)gameplayHud.SetActive(true);
+        gameStarted=true;UpdateHUD();
+    }
+    void UpdateStartScreen(){if(startButton)startButton.GetComponentInChildren<Text>().text=ended?"VOLVER A JUGAR":"INICIAR MISIÓN";if(startTitle)startTitle.text=ended?"TURNO TERMINADO":"NOCHE DE VIGILANCIA";if(startDescription)startDescription.text=ended?"Tu objetivo: vigilar, conservar energía y llegar a las 6 AM.":"Sobrevive hasta las 6 AM.\nRevisa las cámaras, usa la linterna y vigila los pasillos.\nArrastra la pantalla para mirar; usa el control izquierdo para moverte.";}
+    void ToggleLight(){if(!ended&&gameStarted&&power>0){lightOn=!lightOn;objectiveLight=true;if(flashlight)flashlight.enabled=lightOn;}}
+    void ToggleMonitor(){if(!ended&&gameStarted&&power>0){monitorOpen=!monitorOpen;objectiveCamera=true;cameraText.gameObject.SetActive(monitorOpen);monitorShade.gameObject.SetActive(monitorOpen);if(nextCameraButton)nextCameraButton.gameObject.SetActive(monitorOpen);}}
     void NextCamera(){if(monitorOpen){cameraIndex=(cameraIndex+1)%cameraNames.Length;cameraText.text=cameraNames[cameraIndex];}}
 
     void Update()
@@ -297,13 +322,14 @@ public class WorldBootstrap : MonoBehaviour
         if(gameCamera==null){EnsureFallbackCamera();return;}
         if(startupFailure!=null)return;
         if(ended){if(scareTime>0){scareTime-=Time.deltaTime;gameCamera.fieldOfView=72+Mathf.Sin(Time.time*35)*4;}return;}
-        if(power<=0){power=0;leftClosed=rightClosed=false;monitorOpen=false;lightOn=false;if(flashlight)flashlight.enabled=false;}
+        if(!gameStarted)return;
+        if(power<=0){power=0;monitorOpen=false;lightOn=false;if(flashlight)flashlight.enabled=false;}
         nightTimer+=Time.deltaTime;aiTimer+=Time.deltaTime;
-        float drain = .035f + (monitorOpen ? .19f : 0f) + (leftClosed ? .21f : 0f) + (rightClosed ? .21f : 0f) + (lightOn ? .12f : 0f);
+        float drain = .035f + (monitorOpen ? .19f : 0f) + (lightOn ? .12f : 0f);
         power=Mathf.Max(0,power-drain*Time.deltaTime);
         if(aiTimer>9f){aiTimer=0;AdvanceThreats();}
         if(nightTimer>=NightLength){Win();return;}
-        MovePlayer();UpdateDoors();UpdateCamera();UpdateHUD();
+        MovePlayer();UpdateCamera();UpdateHUD();
     }
     void MovePlayer()
     {
@@ -334,19 +360,11 @@ public class WorldBootstrap : MonoBehaviour
         if(monitorOpen){var p=cameraPositions[cameraIndex];gameCamera.transform.position=p;Vector3 focus=cameraIndex==1?new Vector3(-5,1,1):cameraIndex==2?new Vector3(5,1,1):new Vector3(0,1,0);gameCamera.transform.rotation=Quaternion.LookRotation(focus-p,Vector3.up);gameCamera.fieldOfView=58;}
         else{gameCamera.transform.localPosition=new Vector3(0,1.58f,0);gameCamera.transform.localRotation=Quaternion.Euler(pitch,yaw,0);gameCamera.fieldOfView=72;}
     }
-    void UpdateDoors()
-    {
-        if(leftDoor)leftDoor.position=new Vector3(-4.88f,leftClosed?1.4f:4.5f,1);
-        if(rightDoor)rightDoor.position=new Vector3(4.88f,rightClosed?1.4f:4.5f,1);
-        leftDoorButton.GetComponentInChildren<Text>().text=leftClosed?"OESTE: CERRADA":"PUERTA OESTE";
-        rightDoorButton.GetComponentInChildren<Text>().text=rightClosed?"ESTE: CERRADA":"PUERTA ESTE";
-        lightButton.GetComponentInChildren<Text>().text=lightOn?"LUZ: ENCENDIDA":"LUZ";
-    }
     void AdvanceThreats()
     {
         float difficulty=Mathf.Clamp01(nightTimer/NightLength);
-        if(leftThreat){float x=leftThreat.position.x;if(x<-6){x+=Mathf.Lerp(1.2f,2.1f,difficulty);var actor=leftThreat.GetComponent<MimicActor>();if(actor)actor.PlayWalk();if(Random.value<.48f)PlayThreatSound(leftThreatAudio);}else if(!leftClosed){TriggerLoss("EL VIGILANTE TE ENCONTRÓ");return;}else{x=-14;if(leftThreatAudio)leftThreatAudio.Stop();}leftThreat.position=new Vector3(x,0,1);}
-        if(rightThreat){float x=rightThreat.position.x;if(x>6){var actor=rightThreat.GetComponent<MimicActor>();if(actor)actor.PlayWalk();if(Random.value<Mathf.Lerp(.45f,.8f,difficulty)){x-=Mathf.Lerp(1.2f,2.2f,difficulty);if(actor)actor.PlayRun();if(Random.value<.55f)PlayThreatSound(rightThreatAudio);}}else if(!rightClosed){TriggerLoss("LA FIGURA TE ENCONTRÓ");return;}else{x=14;if(rightThreatAudio)rightThreatAudio.Stop();}rightThreat.position=new Vector3(x,0,1);}
+        if(leftThreat){float x=leftThreat.position.x;if(x<-6){x+=Mathf.Lerp(1.2f,2.1f,difficulty);var actor=leftThreat.GetComponent<MimicActor>();if(actor)actor.PlayWalk();if(Random.value<.48f)PlayThreatSound(leftThreatAudio);}else{TriggerLoss("EL VIGILANTE TE ENCONTRÓ");return;}leftThreat.position=new Vector3(x,0,1);}
+        if(rightThreat){float x=rightThreat.position.x;if(x>6){var actor=rightThreat.GetComponent<MimicActor>();if(actor)actor.PlayWalk();if(Random.value<Mathf.Lerp(.45f,.8f,difficulty)){x-=Mathf.Lerp(1.2f,2.2f,difficulty);if(actor)actor.PlayRun();if(Random.value<.55f)PlayThreatSound(rightThreatAudio);}}else{TriggerLoss("LA FIGURA TE ENCONTRÓ");return;}rightThreat.position=new Vector3(x,0,1);}
         // Face the office when close to the entrance
         if(leftThreat)leftThreat.rotation=Quaternion.Euler(0,90,0);if(rightThreat)rightThreat.rotation=Quaternion.Euler(0,-90,0);
     }
@@ -358,9 +376,16 @@ public class WorldBootstrap : MonoBehaviour
         powerFill.color=power>40?new Color(.3f,.85f,.46f):power>18?new Color(1f,.63f,.12f):new Color(.95f,.16f,.12f);
         if(monitorOpen)cameraText.text=cameraNames[cameraIndex]+"\nToca SIGUIENTE CAM para cambiar";
         if(power<=0&&!monitorOpen){messageText.gameObject.SetActive(true);messageText.text="SIN ENERGÍA\nNo hagas ruido...";}
+        UpdateMissions();
     }
-    void TriggerLoss(string text){ended=true;monitorOpen=false;messageText.gameObject.SetActive(true);messageText.text=text+"\n\nNOCHE TERMINADA";scareTime=2.5f;var actor=leftThreat&&leftThreat.position.x>-6?leftThreat.GetComponent<MimicActor>():rightThreat?rightThreat.GetComponent<MimicActor>():null;if(actor)actor.PlayJumpscare();if(ambienceSource)ambienceSource.Stop();if(sfxSource){if(zombieGroanClip)sfxSource.PlayOneShot(zombieGroanClip,.9f);else if(monsterGrowlClip)sfxSource.PlayOneShot(monsterGrowlClip,1f);}}
-    void Win(){ended=true;messageText.gameObject.SetActive(true);messageText.text="6:00 AM\n\nSOBREVIVISTE A LA NOCHE";}
+    void UpdateMissions()
+    {
+        if(!missionText)return;
+        bool survived=nightTimer>=NightLength;
+        missionText.text="OBJETIVOS\n"+(objectiveCamera?"✓":"□")+" Revisa las cámaras\n"+(objectiveLight?"✓":"□")+" Usa la linterna\n"+(survived?"✓":"□")+" Sobrevive hasta las 6 AM";
+    }
+    void TriggerLoss(string text){ended=true;gameStarted=false;monitorOpen=false;messageText.gameObject.SetActive(true);messageText.text=text+"\n\nNOCHE TERMINADA";scareTime=2.5f;var actor=leftThreat&&leftThreat.position.x>-6?leftThreat.GetComponent<MimicActor>():rightThreat?rightThreat.GetComponent<MimicActor>():null;if(actor)actor.PlayJumpscare();if(ambienceSource)ambienceSource.Stop();if(sfxSource){if(zombieGroanClip)sfxSource.PlayOneShot(zombieGroanClip,.9f);else if(monsterGrowlClip)sfxSource.PlayOneShot(monsterGrowlClip,1f);}if(startOverlay){startOverlay.SetActive(true);UpdateStartScreen();}}
+    void Win(){objectiveCamera=true;objectiveLight=true;UpdateMissions();ended=true;gameStarted=false;messageText.gameObject.SetActive(true);messageText.text="6:00 AM\n\nSOBREVIVISTE A LA NOCHE";if(startOverlay){startOverlay.SetActive(true);UpdateStartScreen();}}
 }
 
 public class SimpleTouchStick : MonoBehaviour,IPointerDownHandler,IDragHandler,IPointerUpHandler
