@@ -14,6 +14,30 @@ public sealed class MimicActor : MonoBehaviour
     static Task<bool> sharedLoadTask;
     Animation[] legacyAnimations = Array.Empty<Animation>();
     bool ready;
+    GameObject placeholder;
+
+    void Awake() { CreateSafePlaceholder(); }
+
+    void CreateSafePlaceholder()
+    {
+        var anchor=Resources.Load<Material>("RuntimeShaders/StandardAnchor");
+        Shader shader=anchor!=null?anchor.shader:Shader.Find("Standard");
+        if(shader==null)return;
+        var shell=new Material(shader);shell.color=new Color(.12f,.14f,.17f,1);if(shell.HasProperty("_Metallic"))shell.SetFloat("_Metallic",.35f);if(shell.HasProperty("_Glossiness"))shell.SetFloat("_Glossiness",.48f);
+        var eye=new Material(shader);eye.color=new Color(1f,.03f,.12f,1);if(eye.HasProperty("_EmissionColor")){eye.EnableKeyword("_EMISSION");eye.SetColor("_EmissionColor",new Color(1f,.015f,.04f)*2.2f);}
+        placeholder=new GameObject("Safe non-magenta loading silhouette");placeholder.transform.SetParent(transform,false);placeholder.transform.localPosition=Vector3.zero;
+        AddBodyPart(PrimitiveType.Capsule,"Torso",new Vector3(0,1.05f,0),new Vector3(.82f,1.04f,.52f),shell);
+        AddBodyPart(PrimitiveType.Sphere,"Head",new Vector3(0,2.12f,0),new Vector3(.86f,.78f,.68f),shell);
+        AddBodyPart(PrimitiveType.Capsule,"Left arm",new Vector3(-.58f,1.2f,0),new Vector3(.28f,.78f,.3f),shell);
+        AddBodyPart(PrimitiveType.Capsule,"Right arm",new Vector3(.58f,1.2f,0),new Vector3(.28f,.78f,.3f),shell);
+        AddBodyPart(PrimitiveType.Sphere,"Left glowing eye",new Vector3(-.22f,2.2f,.31f),new Vector3(.13f,.13f,.08f),eye);
+        AddBodyPart(PrimitiveType.Sphere,"Right glowing eye",new Vector3(.22f,2.2f,.31f),new Vector3(.13f,.13f,.08f),eye);
+    }
+    void AddBodyPart(PrimitiveType type,string part,Vector3 localPosition,Vector3 localScale,Material material)
+    {
+        var piece=GameObject.CreatePrimitive(type);piece.name=part;piece.transform.SetParent(placeholder.transform,false);piece.transform.localPosition=localPosition;piece.transform.localScale=localScale;
+        var collider=piece.GetComponent<Collider>();if(collider)Destroy(collider);var renderer=piece.GetComponent<Renderer>();if(renderer&&material)renderer.sharedMaterial=material;
+    }
 
     async void Start()
     {
@@ -31,6 +55,7 @@ public sealed class MimicActor : MonoBehaviour
                 modelRoot.localScale = Vector3.one * modelScale;
             }
             ApplyAndroidSafeMaterials();
+            if(placeholder)Destroy(placeholder);
             legacyAnimations = GetComponentsInChildren<Animation>(true);
             ready = legacyAnimations.Length > 0;
             if (ready) PlayClip("idle");
@@ -38,7 +63,7 @@ public sealed class MimicActor : MonoBehaviour
         }
         catch (Exception ex)
         {
-            Debug.LogError("Could not load Mimic GLB: " + ex);
+            Debug.LogError("Could not load Mimic GLB; safe placeholder remains visible: " + ex);
         }
     }
 
@@ -211,7 +236,8 @@ public sealed class MimicActor : MonoBehaviour
             {
                 if (state.name.ToLowerInvariant().Contains(search))
                 {
-                    animation.Play(state.name);
+                    state.wrapMode = WrapMode.Loop;
+                    if (!animation.IsPlaying(state.name)) animation.Play(state.name);
                     return;
                 }
             }
@@ -220,6 +246,7 @@ public sealed class MimicActor : MonoBehaviour
             legacyAnimations[0].Play();
     }
 
+    public void PlayIdle() => PlayClip("idle");
     public void PlayWalk() => PlayClip("walk_sk");
     public void PlayRun() => PlayClip("runa");
     public void PlayJumpscare() => PlayClip("jumpscarefront");
