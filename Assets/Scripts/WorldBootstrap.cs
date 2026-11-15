@@ -55,6 +55,8 @@ public class WorldBootstrap : MonoBehaviour
         Button(canvas.transform,"↑",new Vector2(-100,100),new Vector2(120,120),()=>{ if(player) player.GetComponent<Rigidbody>().AddForce(Vector3.up*6,ForceMode.VelocityChange); });
         Button(canvas.transform,"✦",new Vector2(-235,90),new Vector2(120,120),Collect);
         var hint=Label(canvas.transform,"MOVER: WASD / JOYSTICK\nMIRAR: RATÓN / ARRASTRAR",16,TextAnchor.LowerLeft,new Vector2(18,22),new Vector2(430,70));
+        var stickRoot=new GameObject("Move Joystick"); stickRoot.transform.SetParent(canvas.transform,false); var bg=stickRoot.AddComponent<Image>(); bg.color=new Color(.04f,.08f,.12f,.42f); var sr=stickRoot.GetComponent<RectTransform>(); sr.anchorMin=new Vector2(0,0); sr.anchorMax=new Vector2(0,0); sr.pivot=new Vector2(0,0); sr.anchoredPosition=new Vector2(32,110); sr.sizeDelta=new Vector2(170,170); var stick=stickRoot.AddComponent<SimpleTouchStick>();
+        var knob=new GameObject("Joystick Knob"); knob.transform.SetParent(stickRoot.transform,false); var ki=knob.AddComponent<Image>(); ki.color=new Color(.8f,.9f,1f,.55f); var kr=knob.GetComponent<RectTransform>(); kr.anchorMin=new Vector2(.5f,.5f); kr.anchorMax=new Vector2(.5f,.5f); kr.pivot=new Vector2(.5f,.5f); kr.sizeDelta=new Vector2(72,72); stick.knob=kr;
     }
     Text Label(Transform root,string text,int size,TextAnchor anchor,Vector2 pos,Vector2 dims)
     { var o=new GameObject("HUD Text"); o.transform.SetParent(root,false); var t=o.AddComponent<Text>(); t.font=Resources.GetBuiltinResource<Font>("Arial.ttf"); t.text=text; t.fontSize=size; t.color=Color.white; t.alignment=anchor; t.raycastTarget=false; var r=o.GetComponent<RectTransform>(); r.anchorMin=new Vector2(0,1); r.anchorMax=new Vector2(0,1); r.pivot=new Vector2(0,1); r.anchoredPosition=pos; r.sizeDelta=dims; var sh=o.AddComponent<Shadow>(); sh.effectColor=Color.black; sh.effectDistance=new Vector2(2,-2); return t; }
@@ -66,13 +68,21 @@ public class WorldBootstrap : MonoBehaviour
     { timeOfDay+=Time.deltaTime*.015f; var sun=FindObjectOfType<Light>(); if(sun && sun.type==LightType.Directional){sun.transform.rotation=Quaternion.Euler(20+Mathf.Sin(timeOfDay)*45,-35,0); sun.intensity=.65f+(Mathf.Sin(timeOfDay)+1)*.4f;} }
 }
 
+public class SimpleTouchStick : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
+{
+    public RectTransform knob; public static Vector2 Axis { get; private set; } Vector2 center;
+    void Start(){center=GetComponent<RectTransform>().sizeDelta*.5f;}
+    public void OnPointerDown(PointerEventData e){OnDrag(e);}
+    public void OnDrag(PointerEventData e){Vector2 local; RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)transform,e.position,e.pressEventCamera,out local); Vector2 delta=Vector2.ClampMagnitude(local-center,62f); Axis=delta/62f; if(knob)knob.anchoredPosition=delta;}
+    public void OnPointerUp(PointerEventData e){Axis=Vector2.zero;if(knob)knob.anchoredPosition=Vector2.zero;}
+}
 public class ExplorerController : MonoBehaviour
 {
     Rigidbody rb; float yaw;
     void Start(){rb=GetComponent<Rigidbody>();}
     void Update()
     {
-        float x=Input.GetAxisRaw("Horizontal"), z=Input.GetAxisRaw("Vertical"); Vector3 forward=Camera.main?Camera.main.transform.forward:Vector3.forward; forward.y=0; forward.Normalize(); Vector3 right=Camera.main?Camera.main.transform.right:Vector3.right; right.y=0; right.Normalize(); Vector3 move=forward*z+right*x; if(move.sqrMagnitude>.05f){rb.MovePosition(transform.position+move.normalized*5.5f*Time.deltaTime); transform.forward=Vector3.Lerp(transform.forward,move.normalized,Time.deltaTime*10f);} if(Input.GetKeyDown(KeyCode.Space)&&Mathf.Abs(rb.velocity.y)<.1f)rb.AddForce(Vector3.up*6,ForceMode.VelocityChange);
+        float x=Input.GetAxisRaw("Horizontal"), z=Input.GetAxisRaw("Vertical"); if(SimpleTouchStick.Axis.sqrMagnitude>.01f){x=SimpleTouchStick.Axis.x;z=SimpleTouchStick.Axis.y;} Vector3 forward=Camera.main?Camera.main.transform.forward:Vector3.forward; forward.y=0; forward.Normalize(); Vector3 right=Camera.main?Camera.main.transform.right:Vector3.right; right.y=0; right.Normalize(); Vector3 move=forward*z+right*x; if(move.sqrMagnitude>.05f){rb.MovePosition(transform.position+move.normalized*5.5f*Time.deltaTime); transform.forward=Vector3.Lerp(transform.forward,move.normalized,Time.deltaTime*10f);} if(Input.GetKeyDown(KeyCode.Space)&&Mathf.Abs(rb.velocity.y)<.1f)rb.AddForce(Vector3.up*6,ForceMode.VelocityChange);
     }
 }
 public class CameraFollow : MonoBehaviour
