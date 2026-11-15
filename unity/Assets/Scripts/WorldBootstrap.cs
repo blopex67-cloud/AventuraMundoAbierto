@@ -248,6 +248,7 @@ public class WorldBootstrap : MonoBehaviour
             var light=lightObject.AddComponent<Light>();light.type=LightType.Point;light.range=10f;light.intensity=2.2f;light.color=i%2==0?new Color(.22f,.62f,1f):new Color(1f,.40f,.18f);light.shadows=LightShadows.None;lights.Add(light);
         }
         pizzeriaLights=lights.ToArray();
+        var keyObject=new GameObject("Soft directional pizzeria fill");var key=keyObject.AddComponent<Light>();key.type=LightType.Directional;key.intensity=.22f;key.color=new Color(.64f,.70f,.86f);key.transform.rotation=Quaternion.Euler(52,-28,0);key.shadows=LightShadows.None;
         AddNeonPointLight(new Vector3(-6,3.2f,11),new Color(.15f,.55f,1f),2.3f);
         AddNeonPointLight(new Vector3(6,3.2f,11),new Color(1f,.08f,.28f),2.3f);
         AddNeonPointLight(new Vector3(15,3f,2),new Color(1f,.48f,.12f),1.4f);
@@ -378,7 +379,7 @@ public class WorldBootstrap : MonoBehaviour
         {
             // Keep the many practical/LED point lights cheap on Android; only the key light casts shadows.
             light.shadows=light.type==LightType.Directional&&level>.72f?LightShadows.Hard:LightShadows.None;
-            if(light.type==LightType.Directional)light.intensity=Mathf.Lerp(.7f,1.25f,level);
+            if(light.type==LightType.Directional)light.intensity=Mathf.Lerp(.12f,.55f,level);
             else if(light.type==LightType.Point)light.intensity=Mathf.Lerp(.6f,2.2f,level);
         }
         if(save){PlayerPrefs.SetFloat("Nightwatch.Realism",level);PlayerPrefs.Save();}
