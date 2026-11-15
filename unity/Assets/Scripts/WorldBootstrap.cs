@@ -13,6 +13,8 @@ public class WorldBootstrap : MonoBehaviour
     SimpleTouchStick moveStick;
     Text statusText, cameraText, messageText, missionText;
     Image powerFill, monitorShade;
+    Slider realismSlider;
+    Text realismValueText;
     Button monitorButton, lightButton, nextCameraButton;
     GameObject startOverlay, gameplayHud;
     Text startTitle, startDescription;
@@ -63,6 +65,7 @@ public class WorldBootstrap : MonoBehaviour
             // can no longer leave Unity displaying only its default grey screen.
             BuildPlayer();
             BuildMaterials(); BuildOffice(); BuildThreats(); BuildAudio(); BuildHUD(); UpdateHUD();
+            float savedRealism=PlayerPrefs.GetFloat("Nightwatch.Realism", .35f);ApplyRealismLevel(savedRealism, false);if(realismSlider)realismSlider.SetValueWithoutNotify(savedRealism);if(realismValueText)realismValueText.text="REALISMO · "+Mathf.RoundToInt(savedRealism*100)+"%";
         }
         catch (System.Exception ex)
         {
@@ -257,25 +260,34 @@ public class WorldBootstrap : MonoBehaviour
     {
         var eventObj=new GameObject("Touch Event System");eventObj.AddComponent<EventSystem>();eventObj.AddComponent<StandaloneInputModule>();
         var canvasObj=new GameObject("Nightwatch HUD");var canvas=canvasObj.AddComponent<Canvas>();canvas.renderMode=RenderMode.ScreenSpaceOverlay;canvasObj.AddComponent<CanvasScaler>().uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;canvasObj.GetComponent<CanvasScaler>().referenceResolution=new Vector2(960,540);canvasObj.GetComponent<CanvasScaler>().matchWidthOrHeight=.5f;canvasObj.AddComponent<GraphicRaycaster>();
-        var hud=new GameObject("Gameplay Interface");hud.transform.SetParent(canvas.transform,false);gameplayHud=hud;Transform hudRoot=hud.transform;
+        var hud=new GameObject("Gameplay Interface",typeof(RectTransform));hud.transform.SetParent(canvas.transform,false);gameplayHud=hud;Transform hudRoot=hud.transform;
+        // Critical: child anchors only work if the HUD root stretches over the whole canvas.
+        var hudRect=hud.GetComponent<RectTransform>();hudRect.anchorMin=Vector2.zero;hudRect.anchorMax=Vector2.one;hudRect.offsetMin=Vector2.zero;hudRect.offsetMax=Vector2.zero;hudRect.localScale=Vector3.one;
         // Touching open screen space rotates the view; buttons and joystick sit above this layer.
         var look=Panel(hudRoot,new Vector2(.2f,0),Vector2.zero,new Vector2(520,540),new Color(0,0,0,.001f));
-        var lookRect=look.GetComponent<RectTransform>();lookRect.anchorMin=new Vector2(.2f,0);lookRect.anchorMax=new Vector2(.76f,1);lookRect.offsetMin=Vector2.zero;lookRect.offsetMax=Vector2.zero;look.GetComponent<Image>().raycastTarget=true;look.AddComponent<TouchLookArea>();
-        statusText=Label(hudRoot,"12:00 AM\nNOCHE 1",22,TextAnchor.UpperLeft,new Vector2(25,-20),new Vector2(210,70));
-        var powerBack=Panel(hudRoot,new Vector2(1,0),new Vector2(-25,24),new Vector2(220,34),new Color(.02f,.03f,.04f,.8f));powerFill=Panel(powerBack.transform,new Vector2(0,0),new Vector2(3,3),new Vector2(210,24),new Color(.3f,.85f,.46f,.95f)).GetComponent<Image>();
-        Label(hudRoot,"ENERGÍA",15,TextAnchor.LowerRight,new Vector2(-25,64),new Vector2(220,26));
-        cameraText=Label(hudRoot,"",18,TextAnchor.UpperCenter,new Vector2(0,-18),new Vector2(520,45));cameraText.gameObject.SetActive(false);
-        messageText=Label(hudRoot,"",26,TextAnchor.MiddleCenter,Vector2.zero,new Vector2(620,180));messageText.gameObject.SetActive(false);
+        var lookRect=look.GetComponent<RectTransform>();lookRect.anchorMin=new Vector2(.20f,.12f);lookRect.anchorMax=new Vector2(.70f,.88f);lookRect.offsetMin=Vector2.zero;lookRect.offsetMax=Vector2.zero;look.GetComponent<Image>().raycastTarget=true;look.AddComponent<TouchLookArea>();
+        var statusCard=Panel(hudRoot,new Vector2(0,1),new Vector2(18,-18),new Vector2(188,64),new Color(.025f,.035f,.05f,.88f));statusCard.GetComponent<Image>().raycastTarget=false;
+        statusText=AnchoredLabel(statusCard.transform,"12:00 AM\nNOCHE 1",20,TextAnchor.MiddleLeft,new Vector2(0,1),new Vector2(12,-8),new Vector2(164,48));
+        var powerCard=Panel(hudRoot,new Vector2(1,1),new Vector2(-18,-18),new Vector2(228,64),new Color(.025f,.035f,.05f,.88f));powerCard.GetComponent<Image>().raycastTarget=false;
+        AnchoredLabel(powerCard.transform,"ENERGÍA",13,TextAnchor.UpperLeft,new Vector2(0,1),new Vector2(12,-7),new Vector2(200,18));
+        var powerBack=Panel(powerCard.transform,new Vector2(0,0),new Vector2(12,10),new Vector2(204,28),new Color(.02f,.03f,.04f,.9f));powerFill=Panel(powerBack.transform,new Vector2(0,0),new Vector2(3,3),new Vector2(198,22),new Color(.3f,.85f,.46f,.95f)).GetComponent<Image>();
+        cameraText=AnchoredLabel(hudRoot,"",18,TextAnchor.UpperCenter,new Vector2(.5f,1),new Vector2(0,-20),new Vector2(520,45));cameraText.gameObject.SetActive(false);
+        messageText=AnchoredLabel(hudRoot,"",26,TextAnchor.MiddleCenter,new Vector2(.5f,.5f),Vector2.zero,new Vector2(620,180));messageText.gameObject.SetActive(false);
         monitorShade=Panel(hudRoot,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.02f,.08f,.09f,.28f)).GetComponent<Image>();monitorShade.raycastTarget=false;monitorShade.gameObject.SetActive(false);
-        // Two large, separated action controls at lower right. No doors in this game.
-        lightButton=MakeButton(hudRoot,"LINTERNA",new Vector2(1,0),new Vector2(-250,42),new Vector2(190,66),ToggleLight);
-        monitorButton=MakeButton(hudRoot,"CÁMARAS",new Vector2(1,0),new Vector2(-42,42),new Vector2(190,66),ToggleMonitor);
-        nextCameraButton=MakeButton(hudRoot,"CAMBIAR CÁMARA",new Vector2(1,0),new Vector2(-42,122),new Vector2(190,54),NextCamera);nextCameraButton.gameObject.SetActive(false);
-        missionText=AnchoredLabel(hudRoot,"OBJETIVOS\n□ Revisa las cámaras\n□ Usa la linterna\n□ Sobrevive hasta las 6 AM",17,TextAnchor.UpperRight,new Vector2(1,1),new Vector2(-24,-20),new Vector2(360,120));
+        // Right-side actions use a fixed dock so they're never under the mission card.
+        var actionsCard=Panel(hudRoot,new Vector2(1,0),new Vector2(-18,18),new Vector2(410,84),new Color(.025f,.035f,.05f,.86f));actionsCard.GetComponent<Image>().raycastTarget=false;
+        lightButton=MakeButton(actionsCard.transform,"LINTERNA",new Vector2(0,0),new Vector2(10,12),new Vector2(188,58),ToggleLight);
+        monitorButton=MakeButton(actionsCard.transform,"CÁMARAS",new Vector2(1,0),new Vector2(-10,12),new Vector2(188,58),ToggleMonitor);
+        nextCameraButton=MakeButton(actionsCard.transform,"SIGUIENTE CAM",new Vector2(1,0),new Vector2(-10,82),new Vector2(188,48),NextCamera);nextCameraButton.gameObject.SetActive(false);
+        var missionCard=Panel(hudRoot,new Vector2(1,1),new Vector2(-18,-94),new Vector2(264,118),new Color(.025f,.035f,.05f,.84f));missionCard.GetComponent<Image>().raycastTarget=false;
+        missionText=AnchoredLabel(missionCard.transform,"OBJETIVOS\n□ Revisa las cámaras\n□ Usa la linterna\n□ Sobrevive hasta las 6 AM",14,TextAnchor.UpperLeft,new Vector2(0,1),new Vector2(12,-10),new Vector2(240,100));
+        var realismCard=Panel(hudRoot,new Vector2(0,1),new Vector2(18,-92),new Vector2(188,62),new Color(.025f,.035f,.05f,.86f));realismCard.GetComponent<Image>().raycastTarget=false;
+        realismValueText=AnchoredLabel(realismCard.transform,"REALISMO · 35%",12,TextAnchor.UpperLeft,new Vector2(0,1),new Vector2(10,-6),new Vector2(168,18));
+        realismSlider=CreateRealismSlider(realismCard.transform);
         // Movement stick stays in its own lower-left zone, away from camera look and action buttons.
-        var stickObj=Panel(hudRoot,new Vector2(0,0),new Vector2(34,30),new Vector2(142,142),new Color(.08f,.12f,.16f,.48f));moveStick=stickObj.AddComponent<SimpleTouchStick>();
-        var knob=Panel(stickObj.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(58,58),new Color(.7f,.8f,.9f,.65f));moveStick.knob=knob.GetComponent<RectTransform>();
-        Label(hudRoot,"MOVER",14,TextAnchor.LowerLeft,new Vector2(43,180),new Vector2(130,25));
+        var stickObj=Panel(hudRoot,new Vector2(0,0),new Vector2(22,22),new Vector2(142,142),new Color(.04f,.07f,.10f,.62f));moveStick=stickObj.AddComponent<SimpleTouchStick>();
+        var knob=Panel(stickObj.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(58,58),new Color(.7f,.8f,.9f,.75f));moveStick.knob=knob.GetComponent<RectTransform>();
+        AnchoredLabel(hudRoot,"MOVER",13,TextAnchor.LowerLeft,new Vector2(0,0),new Vector2(27,172),new Vector2(132,22));
         hud.SetActive(false);
         startOverlay=Panel(canvas.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.015f,.025f,.04f,.98f));
         var full=startOverlay.GetComponent<RectTransform>();full.anchorMin=Vector2.zero;full.anchorMax=Vector2.one;full.offsetMin=Vector2.zero;full.offsetMax=Vector2.zero;
@@ -291,7 +303,29 @@ public class WorldBootstrap : MonoBehaviour
     GameObject Panel(Transform parent,Vector2 anchor,Vector2 pos,Vector2 size,Color color)
     {var o=new GameObject("Panel");o.transform.SetParent(parent,false);var im=o.AddComponent<Image>();im.color=color;im.raycastTarget=(color.a>.01f);var r=o.GetComponent<RectTransform>();r.anchorMin=anchor;r.anchorMax=anchor;r.pivot=anchor;r.anchoredPosition=pos;r.sizeDelta=size;return o;}
     Button MakeButton(Transform parent,string text,Vector2 anchor,Vector2 pos,Vector2 size,UnityEngine.Events.UnityAction action)
-    {var o=Panel(parent,anchor,pos,size,new Color(.055f,.075f,.09f,.88f));var b=o.AddComponent<Button>();b.targetGraphic=o.GetComponent<Image>();b.onClick.AddListener(action);var t=Label(o.transform,text,16,TextAnchor.MiddleCenter,Vector2.zero,size- new Vector2(14,8));var r=t.rectTransform;r.anchorMin=Vector2.zero;r.anchorMax=Vector2.one;r.pivot=new Vector2(.5f,.5f);r.anchoredPosition=Vector2.zero;return b;}
+    {var o=Panel(parent,anchor,pos,size,new Color(.055f,.075f,.09f,.96f));var image=o.GetComponent<Image>();image.raycastTarget=true;var b=o.AddComponent<Button>();b.targetGraphic=image;b.transition=Selectable.Transition.ColorTint;b.colors=new ColorBlock{normalColor=Color.white,highlightedColor=new Color(.76f,.88f,1f),pressedColor=new Color(.35f,.65f,.9f),selectedColor=Color.white,disabledColor=new Color(.4f,.4f,.4f),colorMultiplier=1f,fadeDuration=.08f};b.onClick.AddListener(action);var t=AnchoredLabel(o.transform,text,15,TextAnchor.MiddleCenter,new Vector2(.5f,.5f),Vector2.zero,size-new Vector2(14,8));return b;}
+
+    Slider CreateRealismSlider(Transform parent)
+    {
+        var go=new GameObject("Realism power",typeof(RectTransform),typeof(Slider));go.transform.SetParent(parent,false);
+        var rect=go.GetComponent<RectTransform>();rect.anchorMin=new Vector2(0,0);rect.anchorMax=new Vector2(1,0);rect.pivot=new Vector2(.5f,0);rect.offsetMin=new Vector2(10,8);rect.offsetMax=new Vector2(-10,30);
+        var track=new GameObject("Track",typeof(RectTransform),typeof(Image));track.transform.SetParent(go.transform,false);var tr=track.GetComponent<RectTransform>();tr.anchorMin=new Vector2(0,.36f);tr.anchorMax=new Vector2(1,.64f);tr.offsetMin=Vector2.zero;tr.offsetMax=Vector2.zero;track.GetComponent<Image>().color=new Color(.18f,.23f,.3f,1);
+        var fill=new GameObject("Fill",typeof(RectTransform),typeof(Image));fill.transform.SetParent(track.transform,false);var fr=fill.GetComponent<RectTransform>();fr.anchorMin=Vector2.zero;fr.anchorMax=Vector2.one;fr.offsetMin=Vector2.zero;fr.offsetMax=Vector2.zero;fill.GetComponent<Image>().color=new Color(.2f,.67f,1f,1);
+        var knob=new GameObject("Handle",typeof(RectTransform),typeof(Image));knob.transform.SetParent(go.transform,false);var kr=knob.GetComponent<RectTransform>();kr.sizeDelta=new Vector2(20,24);knob.GetComponent<Image>().color=Color.white;
+        var slider=go.GetComponent<Slider>();slider.minValue=0;slider.maxValue=1;slider.value=.35f;slider.fillRect=fr;slider.handleRect=kr;slider.targetGraphic=knob.GetComponent<Image>();slider.onValueChanged.AddListener(v=>{ApplyRealismLevel(v,true);if(realismValueText)realismValueText.text="REALISMO · "+Mathf.RoundToInt(v*100)+"%";});return slider;
+    }
+    void ApplyRealismLevel(float level,bool save)
+    {
+        level=Mathf.Clamp01(level);RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor=Color.Lerp(new Color(.20f,.22f,.27f),new Color(.48f,.52f,.58f),level);
+        RenderSettings.ambientEquatorColor=Color.Lerp(new Color(.12f,.13f,.16f),new Color(.28f,.30f,.34f),level);
+        RenderSettings.ambientGroundColor=Color.Lerp(new Color(.045f,.05f,.06f),new Color(.12f,.12f,.13f),level);
+        QualitySettings.shadows=level>.58f?ShadowQuality.HardOnly:ShadowQuality.Disable;
+        QualitySettings.shadowDistance=Mathf.Lerp(8f,26f,level);
+        foreach(var light in FindObjectsOfType<Light>())
+        {light.shadows=level>.58f?LightShadows.Hard:LightShadows.None;if(light.type==LightType.Directional)light.intensity=Mathf.Lerp(.7f,1.25f,level);}
+        if(save){PlayerPrefs.SetFloat("Nightwatch.Realism",level);PlayerPrefs.Save();}
+    }
 
     void StartMission()
     {
