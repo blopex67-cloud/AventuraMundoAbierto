@@ -1,0 +1,9 @@
+MODEL: The Mimic DLC
+AUTHOR: SpiderBight [ArachnoBoy] (@vang807)
+SOURCE: https://sketchfab.com/3d-models/the-mimic-dlc-1dbe9b38ad8b47cc880b63d493b20884
+LICENSE: Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+LICENSE TEXT: https://creativecommons.org/licenses/by-nc/4.0/
+
+Changes: Integrated into the Unity horror game as an enemy character; loaded with Unity glTFast and its included animation clips are used for idle/walk/run/jumpscare when available.
+
+NonCommercial restriction applies. Do not use this model in a commercial product or distribute it separately from the game.
