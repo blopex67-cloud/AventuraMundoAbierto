@@ -11,15 +11,21 @@ public class WorldBootstrap : MonoBehaviour
     Camera gameCamera;
     Light flashlight;
     SimpleTouchStick moveStick;
-    Text statusText, cameraText, messageText, missionText;
-    Image powerFill, monitorShade;
+    Text statusText, messageText, missionText;
+    Image powerFill;
     Slider realismSlider;
     Text realismValueText;
-    Button monitorButton, lightButton, nextCameraButton;
+    Image filmGrainOverlay;
+    Button lightButton, whistleButton;
     GameObject startOverlay, gameplayHud;
-    Text startTitle, startDescription;
+    Text startTitle, startDescription, animatronicTurnText, whistleText;
     Button startButton;
     bool gameStarted, objectiveCamera, objectiveLight;
+    int activeHunterIndex;
+    float turnClock, whistleCooldown, whistleStunTimer, realismLevel=.35f;
+    Light[] pizzeriaLights;
+    Material neonPinkMat, neonCyanMat, neonGoldMat, stageMat;
+    static Sprite circularControlSprite;
     AudioSource ambienceSource, sfxSource, leftThreatAudio, rightThreatAudio;
     AudioClip ambienceClip, monsterGrowlClip, zombieGroanClip;
     Material wallMat, floorMat, metalMat, trimMat, eyeMat;
@@ -28,11 +34,8 @@ public class WorldBootstrap : MonoBehaviour
     bool emergencyGroundCreated;
     float verticalVelocity;
     string startupFailure;
-    bool monitorOpen, lightOn, ended;
-    float yaw, pitch = 2f, power = 100f, nightTimer, aiTimer, scareTime;
-    int cameraIndex = 0;
-    const float NightLength = 240f;
-    readonly string[] cameraNames = { "CAM 01  |  VESTÍBULO", "CAM 02  |  PASILLO OESTE", "CAM 03  |  PASILLO ESTE", "CAM 04  |  ALMACÉN" };
+    bool lightOn, ended;
+    float yaw, pitch = 2f, power = 100f, aiTimer, scareTime;
     readonly Vector3[] cameraPositions = { new Vector3(0,2.1f,9), new Vector3(-11,2.1f,2), new Vector3(11,2.1f,2), new Vector3(0,2.2f,-10) };
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -64,7 +67,7 @@ public class WorldBootstrap : MonoBehaviour
             // Create the camera before generating the rest of the world. A failure later
             // can no longer leave Unity displaying only its default grey screen.
             BuildPlayer();
-            BuildMaterials(); BuildOffice(); BuildThreats(); BuildAudio(); BuildHUD(); UpdateHUD();
+            BuildMaterials(); BuildPizzeria(); BuildThreats(); BuildAudio(); BuildHUD(); UpdateHUD();
             float savedRealism=PlayerPrefs.GetFloat("Nightwatch.Realism", .35f);ApplyRealismLevel(savedRealism, false);if(realismSlider)realismSlider.SetValueWithoutNotify(savedRealism);if(realismValueText)realismValueText.text="REALISMO · "+Mathf.RoundToInt(savedRealism*100)+"%";
         }
         catch (System.Exception ex)
@@ -107,6 +110,10 @@ public class WorldBootstrap : MonoBehaviour
         metalMat = MakeMat(new Color(.23f,.25f,.26f), .72f, .42f);
         trimMat = MakeMat(new Color(.055f,.065f,.07f), .45f, .3f);
         eyeMat = MakeMat(new Color(1f,.18f,.025f), .1f, .2f, true);
+        neonPinkMat=MakeMat(new Color(1f,.035f,.24f),0,.3f,true);
+        neonCyanMat=MakeMat(new Color(.02f,.75f,1f),0,.3f,true);
+        neonGoldMat=MakeMat(new Color(1f,.48f,.04f),0,.3f,true);
+        stageMat=MakeMat(new Color(.16f,.035f,.055f),.05f,.32f);
     }
     Material MakeMat(Color color, float metallic=0, float smooth=.25f, bool emission=false)
     {
@@ -176,51 +183,82 @@ public class WorldBootstrap : MonoBehaviour
         var r=o.GetComponent<Renderer>(); if(mat)r.sharedMaterial=mat;
         if(!collider){var c=o.GetComponent<Collider>();if(c)Destroy(c);} return o;
     }
-    void BuildOffice()
+    void BuildPizzeria()
     {
-        RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight=new Color(.11f,.13f,.16f); RenderSettings.fog=true; RenderSettings.fogColor=new Color(.045f,.055f,.065f); RenderSettings.fogMode=FogMode.ExponentialSquared; RenderSettings.fogDensity=.018f;
-        Box("Office floor",new Vector3(0,-.22f,0),new Vector3(10,.44f,10),floorMat);
-        Box("Office ceiling",new Vector3(0,3.5f,0),new Vector3(10,.3f,10),trimMat);
-        Box("Back wall",new Vector3(0,1.6f,-5),new Vector3(10,3.4f,.3f),wallMat);
-        Box("Front wall left",new Vector3(-3.4f,1.6f,5),new Vector3(3.2f,3.4f,.3f),wallMat);
-        Box("Front wall right",new Vector3(3.4f,1.6f,5),new Vector3(3.2f,3.4f,.3f),wallMat);
-        Box("Front lintel",new Vector3(0,3.1f,5),new Vector3(3.6f,.4f,.3f),wallMat);
-        Box("Left wall rear",new Vector3(-5,1.6f,-2.9f),new Vector3(.3f,3.4f,4.2f),wallMat);
-        Box("Left wall front",new Vector3(-5,1.6f,4.1f),new Vector3(.3f,3.4f,1.8f),wallMat);
-        Box("Right wall rear",new Vector3(5,1.6f,-2.9f),new Vector3(.3f,3.4f,4.2f),wallMat);
-        Box("Right wall front",new Vector3(5,1.6f,4.1f),new Vector3(.3f,3.4f,1.8f),wallMat);
-        // Corridors and solid collision boundaries
-        foreach(int side in new[]{-1,1})
+        RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor=new Color(.22f,.24f,.30f);
+        RenderSettings.ambientEquatorColor=new Color(.16f,.17f,.20f);
+        RenderSettings.ambientGroundColor=new Color(.055f,.05f,.055f);
+        RenderSettings.fog=true;RenderSettings.fogColor=new Color(.055f,.045f,.065f);RenderSettings.fogMode=FogMode.ExponentialSquared;RenderSettings.fogDensity=.006f;
+
+        // Large continuous walkable dining room with a roof and perimeter collision.
+        Box("Pizzeria tiled floor",new Vector3(0,-.22f,0),new Vector3(44,.44f,32),floorMat);
+        Box("Pizzeria ceiling",new Vector3(0,5.4f,0),new Vector3(44,.32f,32),trimMat);
+        Box("Back perimeter wall",new Vector3(0,2.5f,16),new Vector3(44,5,.35f),wallMat);
+        Box("Front perimeter wall",new Vector3(0,2.5f,-16),new Vector3(44,5,.35f),wallMat);
+        Box("Left perimeter wall",new Vector3(-22,2.5f,0),new Vector3(.35f,5,32),wallMat);
+        Box("Right perimeter wall",new Vector3(22,2.5f,0),new Vector3(.35f,5,32),wallMat);
+
+        // Show stage, with safe route down the center and accessible open sides.
+        Box("Animatronic stage",new Vector3(0,.22f,12.2f),new Vector3(13,.44f,5.8f),metalMat);
+        Box("Stage back",new Vector3(0,2.55f,15.05f),new Vector3(13,4.7f,.25f),stageMat);
+        for(int x=-5;x<=5;x+=2)Box("Red stage curtain",new Vector3(x,2.65f,14.83f),new Vector3(1.35f,4.1f,.18f),stageMat);
+        for(int x=-6;x<=6;x+=2)Box("Stage footlight",new Vector3(x,.55f,9.28f),new Vector3(.65f,.13f,.14f),x%4==0?neonCyanMat:neonPinkMat,false);
+
+        // Neon sign, strips and pizzeria wayfinding; emissive surfaces plus a few real spotlights.
+        Box("Neon sign backing",new Vector3(0,4.55f,15.0f),new Vector3(8,.85f,.22f),trimMat,false);
+        Box("NEON PIZZERIA",new Vector3(0,4.55f,14.84f),new Vector3(7.2f,.14f,.08f),neonPinkMat,false);
+        Box("Ceiling LED strip left",new Vector3(-10,5.1f,0),new Vector3(.08f,.08f,27),neonCyanMat,false);
+        Box("Ceiling LED strip right",new Vector3(10,5.1f,0),new Vector3(.08f,.08f,27),neonPinkMat,false);
+        Box("Counter front",new Vector3(15,.62f,4),new Vector3(5,1.25f,1.3f),stageMat);
+        Box("Counter top",new Vector3(15,1.3f,4),new Vector3(5.3f,.18f,1.55f),metalMat);
+        Box("Kitchen partition",new Vector3(18,2.3f,10),new Vector3(7,4.6f,.25f),wallMat);
+        Box("Kitchen sign",new Vector3(15,3.6f,9.82f),new Vector3(4,.12f,.08f),neonGoldMat,false);
+
+        // Tables, benches and party furniture are solid; broad aisles remain open for roaming.
+        for(int row=0;row<3;row++)
+        for(int col=0;col<3;col++)
         {
-            Box("Hall floor",new Vector3(side*16,-.22f,1),new Vector3(22,.44f,7),floorMat);
-            Box("Hall ceiling",new Vector3(side*16,3.5f,1),new Vector3(22,.3f,7),trimMat);
-            Box("Hall outer wall",new Vector3(side*27,1.6f,1),new Vector3(.3f,3.4f,7),wallMat);
-            Box("Hall rear wall",new Vector3(side*16,1.6f,-2.5f),new Vector3(22,3.4f,.3f),wallMat);
-            Box("Hall front wall",new Vector3(side*16,1.6f,4.5f),new Vector3(22,3.4f,.3f),wallMat);
-            // Emergency wall lights: simple emissive fixtures, no real-time point lights.
-            Box("Hall lamp housing",new Vector3(side*10,2.95f,1),new Vector3(.8f,.12f,.7f),trimMat,true);
-            var lamp=Box("Hall lamp",new Vector3(side*10,2.86f,1),new Vector3(.55f,.045f,.42f),MakeMat(new Color(.63f,.55f,.37f),0,.2f,true),true);
+            float x=-13+col*8, z=-7+row*6;
+            Box("Party table",new Vector3(x,.82f,z),new Vector3(3.2f,.18f,1.9f),metalMat);
+            for(int sx=-1;sx<=1;sx+=2)for(int sz=-1;sz<=1;sz+=2)
+                Box("Table leg",new Vector3(x+sx*1.25f,.39f,z+sz*.68f),new Vector3(.13f,.78f,.13f),trimMat);
+            Box("Dining bench",new Vector3(x,.53f,z-1.75f),new Vector3(3.3f,.45f,.42f),stageMat);
+            Box("Dining bench",new Vector3(x,.53f,z+1.75f),new Vector3(3.3f,.45f,.42f),stageMat);
         }
-        // Office props and silhouette-breaking geometry
-        Box("Desk top",new Vector3(0,1.05f,2.15f),new Vector3(4.2f,.22f,1.35f),metalMat);
-        Box("Desk front",new Vector3(0,.52f,2.72f),new Vector3(4.2f,.95f,.18f),trimMat);
-        for(int x=-1;x<=1;x+=2)for(int z=-1;z<=1;z+=2)Box("Desk leg",new Vector3(x*1.8f,.28f,2.15f+z*.48f),new Vector3(.12f,.56f,.12f),metalMat);
-        Box("Monitor casing",new Vector3(0,1.85f,2.45f),new Vector3(1.8f,1.12f,.18f),trimMat,true);
-        Box("Monitor screen",new Vector3(0,1.86f,2.34f),new Vector3(1.58f,.83f,.035f),MakeMat(new Color(.035f,.10f,.12f),.12f,.18f,true),true);
-        for(int i=0;i<5;i++)
+        // Arcade cabinets, party decorations and pizza props to make exploration read as a pizzeria.
+        for(int i=0;i<4;i++)
         {
-            Box("Wall acoustic panel",new Vector3(-3.8f+i*1.9f,2.45f,-4.79f),new Vector3(1.4f,.75f,.1f),i%2==0?trimMat:metalMat,true);
+            float x=-15+i*4.5f;
+            Box("Arcade cabinet",new Vector3(x,.95f,-13.9f),new Vector3(1.25f,1.9f,.72f),trimMat);
+            Box("Arcade screen",new Vector3(x,1.35f,-13.48f),new Vector3(.88f,.58f,.035f),i%2==0?neonCyanMat:neonPinkMat,false);
         }
-        var lampLight=new GameObject("Office overhead light").AddComponent<Light>(); lampLight.type=LightType.Directional;lampLight.intensity=.42f;lampLight.color=new Color(.70f,.78f,1f);lampLight.transform.rotation=Quaternion.Euler(48,-25,0);lampLight.shadows=LightShadows.Hard;
-        // Camera housings at corridor ends (visual navigation cues)
-        foreach(int side in new[]{-1,1})
-        {var cam=GameObject.CreatePrimitive(PrimitiveType.Cylinder);cam.name="CCTV housing";cam.transform.position=new Vector3(side*15,2.8f,-1.5f);cam.transform.localScale=new Vector3(.24f,.34f,.24f);cam.transform.rotation=Quaternion.Euler(0,0,90);cam.GetComponent<Renderer>().sharedMaterial=metalMat;}
+        for(int i=0;i<4;i++)
+        {
+            float x=-12+i*8;
+            Box("Party pennant",new Vector3(x,4.25f,5.5f),new Vector3(.32f,.65f,.10f),i%2==0?neonGoldMat:neonPinkMat,false);
+        }
+        // Six practical light pools; emissive strips remain visible without heavy post effects.
+        var lights=new List<Light>();
+        for(int i=0;i<6;i++)
+        {
+            float x=-15+i*6;
+            var fixture=Box("Ceiling LED panel",new Vector3(x,5.12f,0),new Vector3(1.2f,.10f,1.8f),i%2==0?neonCyanMat:neonGoldMat,false);
+            var lightObject=new GameObject("Pizzeria practical light");lightObject.transform.position=new Vector3(x,4.85f,0);
+            var light=lightObject.AddComponent<Light>();light.type=LightType.Point;light.range=10f;light.intensity=2.2f;light.color=i%2==0?new Color(.22f,.62f,1f):new Color(1f,.40f,.18f);light.shadows=LightShadows.None;lights.Add(light);
+        }
+        pizzeriaLights=lights.ToArray();
+        AddNeonPointLight(new Vector3(-6,3.2f,11),new Color(.15f,.55f,1f),2.3f);
+        AddNeonPointLight(new Vector3(6,3.2f,11),new Color(1f,.08f,.28f),2.3f);
+        AddNeonPointLight(new Vector3(15,3f,2),new Color(1f,.48f,.12f),1.4f);
     }
+    void AddNeonPointLight(Vector3 position,Color color,float intensity)
+    {var go=new GameObject("Neon glow light");go.transform.position=position;var l=go.AddComponent<Light>();l.type=LightType.Point;l.range=8f;l.intensity=intensity;l.color=color;l.shadows=LightShadows.None;}
 
     void BuildPlayer()
     {
-        playerRoot=new GameObject("First Person Security Guard").transform;playerRoot.position=new Vector3(0,0,-1.2f);
+        playerRoot=new GameObject("Pizzeria Explorer").transform;playerRoot.position=new Vector3(0,0,-11f);
+        playerRoot.gameObject.tag="Player";
         controller=playerRoot.gameObject.AddComponent<CharacterController>();controller.height=1.8f;controller.radius=.34f;controller.center=new Vector3(0,.9f,0);controller.stepOffset=.25f;controller.slopeLimit=45;controller.skinWidth=.04f;
         EnsureFallbackCamera();
         cameraRig=gameCamera.transform;cameraRig.SetParent(playerRoot,false);cameraRig.localPosition=new Vector3(0,1.58f,0);cameraRig.localRotation=Quaternion.identity;
@@ -235,7 +273,7 @@ public class WorldBootstrap : MonoBehaviour
         var actor=root.gameObject.AddComponent<MimicActor>();actor.modelFile="the_mimic_dlc.glb";actor.modelScale=1f;
         return root;
     }
-    void BuildThreats(){leftThreat=MakeThreat("The Warden",new Color(.24f,.29f,.31f),new Vector3(-23,0,1));rightThreat=MakeThreat("The Brass Guest",new Color(.30f,.22f,.13f),new Vector3(23,0,1));}
+    void BuildThreats(){leftThreat=MakeThreat("The Warden",new Color(.24f,.29f,.31f),new Vector3(-2.1f,.48f,12.1f));rightThreat=MakeThreat("The Brass Guest",new Color(.30f,.22f,.13f),new Vector3(2.1f,.48f,12.1f));activeHunterIndex=0;}
     void BuildAudio()
     {
         ambienceClip=Resources.Load<AudioClip>("Audio/CC0/DarkDrone");
@@ -267,34 +305,47 @@ public class WorldBootstrap : MonoBehaviour
         var look=Panel(hudRoot,new Vector2(.2f,0),Vector2.zero,new Vector2(520,540),new Color(0,0,0,.001f));
         var lookRect=look.GetComponent<RectTransform>();lookRect.anchorMin=new Vector2(.20f,.12f);lookRect.anchorMax=new Vector2(.70f,.88f);lookRect.offsetMin=Vector2.zero;lookRect.offsetMax=Vector2.zero;look.GetComponent<Image>().raycastTarget=true;look.AddComponent<TouchLookArea>();
         var statusCard=Panel(hudRoot,new Vector2(0,1),new Vector2(18,-18),new Vector2(188,64),new Color(.025f,.035f,.05f,.88f));statusCard.GetComponent<Image>().raycastTarget=false;
+        animatronicTurnText=AnchoredLabel(hudRoot,"DE TURNO: THE WARDEN",14,TextAnchor.UpperCenter,new Vector2(.5f,1),new Vector2(0,-75),new Vector2(360,28));
         statusText=AnchoredLabel(statusCard.transform,"12:00 AM\nNOCHE 1",20,TextAnchor.MiddleLeft,new Vector2(0,1),new Vector2(12,-8),new Vector2(164,48));
         var powerCard=Panel(hudRoot,new Vector2(1,1),new Vector2(-18,-18),new Vector2(228,64),new Color(.025f,.035f,.05f,.88f));powerCard.GetComponent<Image>().raycastTarget=false;
-        AnchoredLabel(powerCard.transform,"ENERGÍA",13,TextAnchor.UpperLeft,new Vector2(0,1),new Vector2(12,-7),new Vector2(200,18));
+        AnchoredLabel(powerCard.transform,"PELIGRO",13,TextAnchor.UpperLeft,new Vector2(0,1),new Vector2(12,-7),new Vector2(200,18));
         var powerBack=Panel(powerCard.transform,new Vector2(0,0),new Vector2(12,10),new Vector2(204,28),new Color(.02f,.03f,.04f,.9f));powerFill=Panel(powerBack.transform,new Vector2(0,0),new Vector2(3,3),new Vector2(198,22),new Color(.3f,.85f,.46f,.95f)).GetComponent<Image>();
-        cameraText=AnchoredLabel(hudRoot,"",18,TextAnchor.UpperCenter,new Vector2(.5f,1),new Vector2(0,-20),new Vector2(520,45));cameraText.gameObject.SetActive(false);
         messageText=AnchoredLabel(hudRoot,"",26,TextAnchor.MiddleCenter,new Vector2(.5f,.5f),Vector2.zero,new Vector2(620,180));messageText.gameObject.SetActive(false);
-        monitorShade=Panel(hudRoot,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.02f,.08f,.09f,.28f)).GetComponent<Image>();monitorShade.raycastTarget=false;monitorShade.gameObject.SetActive(false);
         // Right-side actions use a fixed dock so they're never under the mission card.
         var actionsCard=Panel(hudRoot,new Vector2(1,0),new Vector2(-18,18),new Vector2(410,84),new Color(.025f,.035f,.05f,.86f));actionsCard.GetComponent<Image>().raycastTarget=false;
         lightButton=MakeButton(actionsCard.transform,"LINTERNA",new Vector2(0,0),new Vector2(10,12),new Vector2(188,58),ToggleLight);
-        monitorButton=MakeButton(actionsCard.transform,"CÁMARAS",new Vector2(1,0),new Vector2(-10,12),new Vector2(188,58),ToggleMonitor);
-        nextCameraButton=MakeButton(actionsCard.transform,"SIGUIENTE CAM",new Vector2(1,0),new Vector2(-10,82),new Vector2(188,48),NextCamera);nextCameraButton.gameObject.SetActive(false);
+        whistleButton=MakeButton(actionsCard.transform,"SILBATO",new Vector2(1,0),new Vector2(-10,12),new Vector2(188,58),UseWhistle);
+        whistleText=AnchoredLabel(hudRoot,"",14,TextAnchor.MiddleCenter,new Vector2(.5f,0),new Vector2(0,20),new Vector2(220,24));
         var missionCard=Panel(hudRoot,new Vector2(1,1),new Vector2(-18,-94),new Vector2(264,118),new Color(.025f,.035f,.05f,.84f));missionCard.GetComponent<Image>().raycastTarget=false;
         missionText=AnchoredLabel(missionCard.transform,"OBJETIVOS\n□ Revisa las cámaras\n□ Usa la linterna\n□ Sobrevive hasta las 6 AM",14,TextAnchor.UpperLeft,new Vector2(0,1),new Vector2(12,-10),new Vector2(240,100));
         var realismCard=Panel(hudRoot,new Vector2(0,1),new Vector2(18,-92),new Vector2(188,62),new Color(.025f,.035f,.05f,.86f));realismCard.GetComponent<Image>().raycastTarget=false;
         realismValueText=AnchoredLabel(realismCard.transform,"REALISMO · 35%",12,TextAnchor.UpperLeft,new Vector2(0,1),new Vector2(10,-6),new Vector2(168,18));
         realismSlider=CreateRealismSlider(realismCard.transform);
         // Movement stick stays in its own lower-left zone, away from camera look and action buttons.
-        var stickObj=Panel(hudRoot,new Vector2(0,0),new Vector2(22,22),new Vector2(142,142),new Color(.04f,.07f,.10f,.62f));moveStick=stickObj.AddComponent<SimpleTouchStick>();
-        var knob=Panel(stickObj.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(58,58),new Color(.7f,.8f,.9f,.75f));moveStick.knob=knob.GetComponent<RectTransform>();
+        var stickObj=Panel(hudRoot,new Vector2(0,0),new Vector2(22,22),new Vector2(142,142),new Color(.04f,.07f,.10f,.78f));var stickImage=stickObj.GetComponent<Image>();stickImage.sprite=GetCircularControlSprite();stickImage.type=Image.Type.Simple;stickImage.raycastTarget=true;moveStick=stickObj.AddComponent<SimpleTouchStick>();
+        var knob=Panel(stickObj.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(58,58),new Color(.7f,.8f,.9f,.90f));var knobImage=knob.GetComponent<Image>();knobImage.sprite=GetCircularControlSprite();knobImage.type=Image.Type.Simple;knobImage.raycastTarget=false;moveStick.knob=knob.GetComponent<RectTransform>();
         AnchoredLabel(hudRoot,"MOVER",13,TextAnchor.LowerLeft,new Vector2(0,0),new Vector2(27,172),new Vector2(132,22));
+        var grain=Panel(hudRoot,new Vector2(.5f,.5f),Vector2.zero,new Vector2(0,0),new Color(1,1,1,.025f));var grainRect=grain.GetComponent<RectTransform>();grainRect.anchorMin=Vector2.zero;grainRect.anchorMax=Vector2.one;grainRect.offsetMin=Vector2.zero;grainRect.offsetMax=Vector2.zero;var grainImage=grain.GetComponent<Image>();grainImage.sprite=GetFilmGrainSprite();grainImage.type=Image.Type.Simple;grainImage.raycastTarget=false;filmGrainOverlay=grainImage;grain.transform.SetAsLastSibling();
         hud.SetActive(false);
         startOverlay=Panel(canvas.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.015f,.025f,.04f,.98f));
         var full=startOverlay.GetComponent<RectTransform>();full.anchorMin=Vector2.zero;full.anchorMax=Vector2.one;full.offsetMin=Vector2.zero;full.offsetMax=Vector2.zero;
-        startTitle=AnchoredLabel(startOverlay.transform,"NOCHE DE VIGILANCIA",36,TextAnchor.MiddleCenter,new Vector2(.5f,.5f),new Vector2(0,-30),new Vector2(800,65));
-        startDescription=AnchoredLabel(startOverlay.transform,"Sobrevive hasta las 6 AM.\nRevisa las cámaras, usa la linterna y vigila los pasillos.\nArrastra la pantalla para mirar; usa el control izquierdo para moverte.",20,TextAnchor.MiddleCenter,new Vector2(.5f,.5f),new Vector2(0,-115),new Vector2(780,110));
-        startButton=MakeButton(startOverlay.transform,"INICIAR MISIÓN",new Vector2(.5f,.5f),new Vector2(0,95),new Vector2(270,72),StartMission);
+        startTitle=AnchoredLabel(startOverlay.transform,"PIZZERÍA · TURNO DE NOCHE",32,TextAnchor.MiddleCenter,new Vector2(.5f,.5f),new Vector2(0,-30),new Vector2(800,65));
+        startDescription=AnchoredLabel(startOverlay.transform,"Explora la pizzería en primera persona.\nUn animatrónico te persigue mientras el otro permanece en el escenario; cambian de turno.\nJoystick izquierdo para caminar y arrastra con otro dedo para mirar.",20,TextAnchor.MiddleCenter,new Vector2(.5f,.5f),new Vector2(0,-115),new Vector2(780,110));
+        startButton=MakeButton(startOverlay.transform,"ENTRAR A LA PIZZERÍA",new Vector2(.5f,.5f),new Vector2(0,95),new Vector2(270,72),StartMission);
         UpdateStartScreen();
+    }
+    static Sprite GetCircularControlSprite()
+    {
+        if(circularControlSprite!=null)return circularControlSprite;
+        const int size=96;var tex=new Texture2D(size,size,TextureFormat.RGBA32,false,true);tex.name="Round joystick touch surface";tex.wrapMode=TextureWrapMode.Clamp;tex.filterMode=FilterMode.Bilinear;
+        var pixels=new Color32[size*size];float center=(size-1)*.5f,radius=size*.47f;
+        for(int y=0;y<size;y++)for(int x=0;x<size;x++){float d=Vector2.Distance(new Vector2(x,y),new Vector2(center,center));byte a=(byte)Mathf.RoundToInt(Mathf.Clamp01(radius+.5f-d)*255);pixels[y*size+x]=new Color32(255,255,255,a);}
+        tex.SetPixels32(pixels);tex.Apply(false,true);circularControlSprite=Sprite.Create(tex,new Rect(0,0,size,size),new Vector2(.5f,.5f),size);return circularControlSprite;
+    }
+    static Sprite GetFilmGrainSprite()
+    {
+        const int size=128;var tex=new Texture2D(size,size,TextureFormat.RGBA32,false,true);tex.name="Subtle static film grain";tex.wrapMode=TextureWrapMode.Repeat;tex.filterMode=FilterMode.Point;var rng=new System.Random(90817);var pixels=new Color32[size*size];
+        for(int i=0;i<pixels.Length;i++){byte v=(byte)rng.Next(110,246);pixels[i]=new Color32(v,v,v,255);}tex.SetPixels32(pixels);tex.Apply(false,true);return Sprite.Create(tex,new Rect(0,0,size,size),new Vector2(.5f,.5f),size);
     }
     Text AnchoredLabel(Transform parent,string text,int size,TextAnchor align,Vector2 anchor,Vector2 pos,Vector2 sizeDelta)
     {var t=Label(parent,text,size,align,pos,sizeDelta);var r=t.rectTransform;r.anchorMin=anchor;r.anchorMax=anchor;r.pivot=anchor;r.anchoredPosition=pos;r.sizeDelta=sizeDelta;return t;}
@@ -312,24 +363,30 @@ public class WorldBootstrap : MonoBehaviour
         var track=new GameObject("Track",typeof(RectTransform),typeof(Image));track.transform.SetParent(go.transform,false);var tr=track.GetComponent<RectTransform>();tr.anchorMin=new Vector2(0,.36f);tr.anchorMax=new Vector2(1,.64f);tr.offsetMin=Vector2.zero;tr.offsetMax=Vector2.zero;track.GetComponent<Image>().color=new Color(.18f,.23f,.3f,1);
         var fill=new GameObject("Fill",typeof(RectTransform),typeof(Image));fill.transform.SetParent(track.transform,false);var fr=fill.GetComponent<RectTransform>();fr.anchorMin=Vector2.zero;fr.anchorMax=Vector2.one;fr.offsetMin=Vector2.zero;fr.offsetMax=Vector2.zero;fill.GetComponent<Image>().color=new Color(.2f,.67f,1f,1);
         var knob=new GameObject("Handle",typeof(RectTransform),typeof(Image));knob.transform.SetParent(go.transform,false);var kr=knob.GetComponent<RectTransform>();kr.sizeDelta=new Vector2(20,24);knob.GetComponent<Image>().color=Color.white;
-        var slider=go.GetComponent<Slider>();slider.minValue=0;slider.maxValue=1;slider.value=.35f;slider.fillRect=fr;slider.handleRect=kr;slider.targetGraphic=knob.GetComponent<Image>();slider.onValueChanged.AddListener(v=>{ApplyRealismLevel(v,true);if(realismValueText)realismValueText.text="REALISMO · "+Mathf.RoundToInt(v*100)+"%";});return slider;
+        var slider=go.GetComponent<Slider>();slider.minValue=0;slider.maxValue=1;slider.value=PlayerPrefs.GetFloat("Nightwatch.Realism",.35f);slider.fillRect=fr;slider.handleRect=kr;slider.targetGraphic=knob.GetComponent<Image>();slider.onValueChanged.AddListener(v=>{ApplyRealismLevel(v,true);if(realismValueText)realismValueText.text="REALISMO · "+Mathf.RoundToInt(v*100)+"%";});return slider;
     }
     void ApplyRealismLevel(float level,bool save)
     {
-        level=Mathf.Clamp01(level);RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Trilight;
+        level=Mathf.Clamp01(level);realismLevel=level;if(filmGrainOverlay){var tint=filmGrainOverlay.color;tint.a=Mathf.Lerp(.008f,.045f,level);filmGrainOverlay.color=tint;}RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Trilight;
         RenderSettings.ambientSkyColor=Color.Lerp(new Color(.20f,.22f,.27f),new Color(.48f,.52f,.58f),level);
         RenderSettings.ambientEquatorColor=Color.Lerp(new Color(.12f,.13f,.16f),new Color(.28f,.30f,.34f),level);
         RenderSettings.ambientGroundColor=Color.Lerp(new Color(.045f,.05f,.06f),new Color(.12f,.12f,.13f),level);
         QualitySettings.shadows=level>.58f?ShadowQuality.HardOnly:ShadowQuality.Disable;
         QualitySettings.shadowDistance=Mathf.Lerp(8f,26f,level);
         foreach(var light in FindObjectsOfType<Light>())
-        {light.shadows=level>.58f?LightShadows.Hard:LightShadows.None;if(light.type==LightType.Directional)light.intensity=Mathf.Lerp(.7f,1.25f,level);}
+        {
+            // Keep the many practical/LED point lights cheap on Android; only the key light casts shadows.
+            light.shadows=light.type==LightType.Directional&&level>.72f?LightShadows.Hard:LightShadows.None;
+            if(light.type==LightType.Directional)light.intensity=Mathf.Lerp(.7f,1.25f,level);
+            else if(light.type==LightType.Point)light.intensity=Mathf.Lerp(.6f,2.2f,level);
+        }
         if(save){PlayerPrefs.SetFloat("Nightwatch.Realism",level);PlayerPrefs.Save();}
     }
 
     void StartMission()
     {
         if(ended){RestartMission();return;}
+        activeHunterIndex=0;turnClock=0;if(leftThreat)leftThreat.position=StagePosition(0);if(rightThreat)rightThreat.position=StagePosition(1);
         gameStarted=true;
         if(startOverlay)startOverlay.SetActive(false);
         if(gameplayHud)gameplayHud.SetActive(true);
@@ -337,8 +394,8 @@ public class WorldBootstrap : MonoBehaviour
     }
     void RestartMission()
     {
-        nightTimer=0;aiTimer=0;power=100;ended=false;monitorOpen=false;lightOn=false;objectiveCamera=false;objectiveLight=false;verticalVelocity=0;
-        if(leftThreat)leftThreat.position=new Vector3(-23,0,1);if(rightThreat)rightThreat.position=new Vector3(23,0,1);
+        aiTimer=0;power=100;ended=false;lightOn=false;objectiveCamera=false;objectiveLight=false;verticalVelocity=0;yaw=0;pitch=2f;playerRoot.position=new Vector3(0,0,-11f);
+        activeHunterIndex=0;turnClock=0;whistleCooldown=0;whistleStunTimer=0;if(leftThreat)leftThreat.position=StagePosition(0);if(rightThreat)rightThreat.position=StagePosition(1);
         if(ambienceSource&&ambienceClip&&!ambienceSource.isPlaying)ambienceSource.Play();
         if(flashlight)flashlight.enabled=false;
         if(messageText)messageText.gameObject.SetActive(false);
@@ -346,10 +403,9 @@ public class WorldBootstrap : MonoBehaviour
         if(gameplayHud)gameplayHud.SetActive(true);
         gameStarted=true;UpdateHUD();
     }
-    void UpdateStartScreen(){if(startButton)startButton.GetComponentInChildren<Text>().text=ended?"VOLVER A JUGAR":"INICIAR MISIÓN";if(startTitle)startTitle.text=ended?"TURNO TERMINADO":"NOCHE DE VIGILANCIA";if(startDescription)startDescription.text=ended?"Tu objetivo: vigilar, conservar energía y llegar a las 6 AM.":"Sobrevive hasta las 6 AM.\nRevisa las cámaras, usa la linterna y vigila los pasillos.\nArrastra la pantalla para mirar; usa el control izquierdo para moverte.";}
-    void ToggleLight(){if(!ended&&gameStarted&&power>0){lightOn=!lightOn;objectiveLight=true;if(flashlight)flashlight.enabled=lightOn;}}
-    void ToggleMonitor(){if(!ended&&gameStarted&&power>0){monitorOpen=!monitorOpen;objectiveCamera=true;cameraText.gameObject.SetActive(monitorOpen);monitorShade.gameObject.SetActive(monitorOpen);if(nextCameraButton)nextCameraButton.gameObject.SetActive(monitorOpen);}}
-    void NextCamera(){if(monitorOpen){cameraIndex=(cameraIndex+1)%cameraNames.Length;cameraText.text=cameraNames[cameraIndex];}}
+    void UpdateStartScreen(){if(startButton)startButton.GetComponentInChildren<Text>().text=ended?"VOLVER A EXPLORAR":"ENTRAR A LA PIZZERÍA";if(startTitle)startTitle.text=ended?"TE ATRAPARON":"PIZZERÍA · TURNO DE NOCHE";if(startDescription)startDescription.text=ended?"El turno cambió y te encontró. Puedes volver a recorrer la pizzería.":"Explora libremente la pizzería.\nUn animatrónico te persigue y el otro permanece en el escenario; cambian de turno.\nJoystick circular izquierdo para moverte; arrastra con otro dedo para mirar.";}
+    void ToggleLight(){if(!ended&&gameStarted){lightOn=!lightOn;objectiveLight=true;if(flashlight)flashlight.enabled=lightOn;}}
+    void UseWhistle(){if(!gameStarted||ended||whistleCooldown>0)return;whistleCooldown=9f;whistleStunTimer=2.8f;objectiveCamera=true;if(sfxSource&&monsterGrowlClip)sfxSource.PlayOneShot(monsterGrowlClip,.18f);}
 
     void Update()
     {
@@ -357,17 +413,13 @@ public class WorldBootstrap : MonoBehaviour
         if(startupFailure!=null)return;
         if(ended){if(scareTime>0){scareTime-=Time.deltaTime;gameCamera.fieldOfView=72+Mathf.Sin(Time.time*35)*4;}return;}
         if(!gameStarted)return;
-        if(power<=0){power=0;monitorOpen=false;lightOn=false;if(flashlight)flashlight.enabled=false;}
-        nightTimer+=Time.deltaTime;aiTimer+=Time.deltaTime;
-        float drain = .035f + (monitorOpen ? .19f : 0f) + (lightOn ? .12f : 0f);
-        power=Mathf.Max(0,power-drain*Time.deltaTime);
-        if(aiTimer>9f){aiTimer=0;AdvanceThreats();}
-        if(nightTimer>=NightLength){Win();return;}
+        aiTimer+=Time.deltaTime;
+        power=100f; // Free-roam mode has no night timer or resource lockout.
+        UpdateAnimatronicTurns();
         MovePlayer();UpdateCamera();UpdateHUD();
     }
     void MovePlayer()
     {
-        if(monitorOpen)return;
         float x=moveStick?SimpleTouchStick.Axis.x:0,y=moveStick?SimpleTouchStick.Axis.y:0;
         if(Input.GetKey(KeyCode.A))x=-1;if(Input.GetKey(KeyCode.D))x=1;if(Input.GetKey(KeyCode.W))y=1;if(Input.GetKey(KeyCode.S))y=-1;
         Vector3 cameraForward = cameraRig ? Vector3.ProjectOnPlane(cameraRig.forward, Vector3.up).normalized : playerRoot.forward;
@@ -379,56 +431,89 @@ public class WorldBootstrap : MonoBehaviour
         controller.minMoveDistance = 0f;
         if (controller.isGrounded && verticalVelocity < 0f) verticalVelocity = -2f;
         verticalVelocity += Physics.gravity.y * Time.deltaTime;
-        controller.Move((move * 2.1f + Vector3.up * verticalVelocity) * Time.deltaTime);
+        controller.Move((move * 4.2f + Vector3.up * verticalVelocity) * Time.deltaTime);
         if (playerRoot.position.y < -2f)
         {
             Debug.LogError("Player fell through collision surface; restoring player to the office.");
-            playerRoot.position = new Vector3(0,0,-1.2f);
+            playerRoot.position = new Vector3(0,0,-11f);
             verticalVelocity = 0f;
         }
-        playerRoot.position=new Vector3(Mathf.Clamp(playerRoot.position.x,-3.9f,3.9f),playerRoot.position.y,Mathf.Clamp(playerRoot.position.z,-3.7f,2.75f));
+        playerRoot.position=new Vector3(Mathf.Clamp(playerRoot.position.x,-20.8f,20.8f),playerRoot.position.y,Mathf.Clamp(playerRoot.position.z,-14.8f,14.7f));
     }
-    public void LookDrag(Vector2 delta){if(monitorOpen||ended)return;yaw+=delta.x*.20f;pitch=Mathf.Clamp(pitch-delta.y*.16f,-35,35);}
+    public void LookDrag(Vector2 delta){if(ended)return;yaw+=delta.x*.20f;pitch=Mathf.Clamp(pitch-delta.y*.16f,-35,35);}
     void UpdateCamera()
     {
-        if(monitorOpen){var p=cameraPositions[cameraIndex];gameCamera.transform.position=p;Vector3 focus=cameraIndex==1?new Vector3(-5,1,1):cameraIndex==2?new Vector3(5,1,1):new Vector3(0,1,0);gameCamera.transform.rotation=Quaternion.LookRotation(focus-p,Vector3.up);gameCamera.fieldOfView=58;}
-        else{gameCamera.transform.localPosition=new Vector3(0,1.58f,0);gameCamera.transform.localRotation=Quaternion.Euler(pitch,yaw,0);gameCamera.fieldOfView=72;}
+        gameCamera.transform.localPosition=new Vector3(0,1.58f,0);gameCamera.transform.localRotation=Quaternion.Euler(pitch,yaw,0);gameCamera.fieldOfView=72;
     }
-    void AdvanceThreats()
+    void UpdateAnimatronicTurns()
     {
-        float difficulty=Mathf.Clamp01(nightTimer/NightLength);
-        if(leftThreat){float x=leftThreat.position.x;if(x<-6){x+=Mathf.Lerp(1.2f,2.1f,difficulty);var actor=leftThreat.GetComponent<MimicActor>();if(actor)actor.PlayWalk();if(Random.value<.48f)PlayThreatSound(leftThreatAudio);}else{TriggerLoss("EL VIGILANTE TE ENCONTRÓ");return;}leftThreat.position=new Vector3(x,0,1);}
-        if(rightThreat){float x=rightThreat.position.x;if(x>6){var actor=rightThreat.GetComponent<MimicActor>();if(actor)actor.PlayWalk();if(Random.value<Mathf.Lerp(.45f,.8f,difficulty)){x-=Mathf.Lerp(1.2f,2.2f,difficulty);if(actor)actor.PlayRun();if(Random.value<.55f)PlayThreatSound(rightThreatAudio);}}else{TriggerLoss("LA FIGURA TE ENCONTRÓ");return;}rightThreat.position=new Vector3(x,0,1);}
-        // Face the office when close to the entrance
-        if(leftThreat)leftThreat.rotation=Quaternion.Euler(0,90,0);if(rightThreat)rightThreat.rotation=Quaternion.Euler(0,-90,0);
+        turnClock+=Time.deltaTime;whistleCooldown=Mathf.Max(0,whistleCooldown-Time.deltaTime);whistleStunTimer=Mathf.Max(0,whistleStunTimer-Time.deltaTime);
+        if(turnClock>=32f){turnClock=0;activeHunterIndex=1-activeHunterIndex;Transform former=activeHunterIndex==0?rightThreat:leftThreat;Transform next=activeHunterIndex==0?leftThreat:rightThreat;if(former){former.position=StagePosition(activeHunterIndex==0?1:0);var resting=former.GetComponent<MimicActor>();if(resting)resting.PlayIdle();}if(next)next.position=StagePosition(activeHunterIndex);}
+        Transform hunter=activeHunterIndex==0?leftThreat:rightThreat;
+        Transform stageActor=activeHunterIndex==0?rightThreat:leftThreat;
+        if(animatronicTurnText)animatronicTurnText.text="DE TURNO: "+(activeHunterIndex==0?"THE WARDEN":"THE BRASS GUEST")+" · "+Mathf.CeilToInt(32f-turnClock)+" s";
+        if(whistleText)whistleText.text=whistleCooldown>0?"SILBATO · "+Mathf.CeilToInt(whistleCooldown)+" s":whistleStunTimer>0?"SE DETUVO · "+Mathf.CeilToInt(whistleStunTimer)+" s":"";
+        if(stageActor)stageActor.position=StagePosition(activeHunterIndex==0?1:0);
+        if(!hunter||!gameStarted)return;
+        Vector3 target=playerRoot.position;target.y=hunter.position.y;
+        Vector3 toPlayer=target-hunter.position;float distance=toPlayer.magnitude;
+        if(distance<1.2f){TriggerLoss("EL ANIMATRÓNICO TE ALCANZÓ");return;}
+        if(whistleStunTimer<=0f&&distance>1.1f)
+        {
+            Vector3 direction=toPlayer.normalized;
+            Vector3 origin=hunter.position+Vector3.up*.8f;
+            // Keep the pursuer from walking straight through tables and columns.
+            if(Physics.Raycast(origin,direction,out RaycastHit hit,1.6f))
+            {
+                if(hit.transform!=playerRoot&&hit.transform!=hunter&&!hit.transform.IsChildOf(hunter))
+                {
+                    Vector3 right=Vector3.Cross(Vector3.up,direction).normalized;
+                    bool rightFree=!Physics.Raycast(origin,right,1.2f);
+                    direction=rightFree?right:-right;
+                }
+            }
+            float speed=1.45f+Mathf.Clamp01(aiTimer/180f)*.65f;
+            hunter.position+=direction*speed*Time.deltaTime;
+            hunter.position=new Vector3(Mathf.Clamp(hunter.position.x,-20.5f,20.5f),hunter.position.y,Mathf.Clamp(hunter.position.z,-14.8f,14.5f));
+            hunter.rotation=Quaternion.Slerp(hunter.rotation,Quaternion.LookRotation(direction,Vector3.up),Time.deltaTime*6f);
+            var actor=hunter.GetComponent<MimicActor>();if(actor)actor.PlayRun();
+        }
+        if(pizzeriaLights!=null)
+        {
+            for(int i=0;i<pizzeriaLights.Length;i++)if(pizzeriaLights[i])pizzeriaLights[i].intensity=Mathf.Lerp(.65f,2.2f,realismLevel)+Mathf.Sin(Time.time*2.3f+i*1.7f)*.08f;
+        }
     }
+    Vector3 StagePosition(int index){return new Vector3(index==0?-2.1f:2.1f,.48f,12.1f);}
+
     void UpdateHUD()
     {
-        int hour=Mathf.Min(6,Mathf.FloorToInt(nightTimer/NightLength*6));string time=hour==0?"12:00 AM":hour+":00 AM";
-        statusText.text=time+"\nNOCHE 1";
-        powerFill.rectTransform.anchorMin=new Vector2(0,0);powerFill.rectTransform.anchorMax=new Vector2(power/100f,1);powerFill.rectTransform.offsetMin=new Vector2(3,3);powerFill.rectTransform.offsetMax=new Vector2(-3,-3);
-        powerFill.color=power>40?new Color(.3f,.85f,.46f):power>18?new Color(1f,.63f,.12f):new Color(.95f,.16f,.12f);
-        if(monitorOpen)cameraText.text=cameraNames[cameraIndex]+"\nToca SIGUIENTE CAM para cambiar";
-        if(power<=0&&!monitorOpen){messageText.gameObject.SetActive(true);messageText.text="SIN ENERGÍA\nNo hagas ruido...";}
+        if(statusText)statusText.text="PIZZERÍA\nEXPLORACIÓN LIBRE";
+        Transform hunter=activeHunterIndex==0?leftThreat:rightThreat;
+        float danger=hunter?1f-Mathf.Clamp01(Vector3.Distance(playerRoot.position,hunter.position)/18f):0f;
+        if(!powerFill||!playerRoot)return;
+        powerFill.rectTransform.anchorMin=new Vector2(0,0);powerFill.rectTransform.anchorMax=new Vector2(Mathf.Max(.025f,danger),1);powerFill.rectTransform.offsetMin=new Vector2(3,3);powerFill.rectTransform.offsetMax=new Vector2(-3,-3);
+        powerFill.color=danger<.35f?new Color(.3f,.85f,.46f):danger<.7f?new Color(1f,.63f,.12f):new Color(.95f,.16f,.12f);
         UpdateMissions();
     }
     void UpdateMissions()
     {
         if(!missionText)return;
-        bool survived=nightTimer>=NightLength;
-        missionText.text="OBJETIVOS\n"+(objectiveCamera?"✓":"□")+" Revisa las cámaras\n"+(objectiveLight?"✓":"□")+" Usa la linterna\n"+(survived?"✓":"□")+" Sobrevive hasta las 6 AM";
+        missionText.text="PIZZERÍA\nExplora el salón\nEvita al que está de turno\nEl otro descansa en el escenario";
+        if(animatronicTurnText)animatronicTurnText.text="DE TURNO: "+(activeHunterIndex==0?"THE WARDEN":"THE BRASS GUEST");
     }
-    void TriggerLoss(string text){ended=true;gameStarted=false;monitorOpen=false;messageText.gameObject.SetActive(true);messageText.text=text+"\n\nNOCHE TERMINADA";scareTime=2.5f;var actor=leftThreat&&leftThreat.position.x>-6?leftThreat.GetComponent<MimicActor>():rightThreat?rightThreat.GetComponent<MimicActor>():null;if(actor)actor.PlayJumpscare();if(ambienceSource)ambienceSource.Stop();if(sfxSource){if(zombieGroanClip)sfxSource.PlayOneShot(zombieGroanClip,.9f);else if(monsterGrowlClip)sfxSource.PlayOneShot(monsterGrowlClip,1f);}if(startOverlay){startOverlay.SetActive(true);UpdateStartScreen();}}
-    void Win(){objectiveCamera=true;objectiveLight=true;UpdateMissions();ended=true;gameStarted=false;messageText.gameObject.SetActive(true);messageText.text="6:00 AM\n\nSOBREVIVISTE A LA NOCHE";if(startOverlay){startOverlay.SetActive(true);UpdateStartScreen();}}
+    void TriggerLoss(string text){ended=true;gameStarted=false;messageText.gameObject.SetActive(true);messageText.text=text+"\n\nTURNO TERMINADO";scareTime=2.5f;var actor=activeHunterIndex==0?(leftThreat?leftThreat.GetComponent<MimicActor>():null):(rightThreat?rightThreat.GetComponent<MimicActor>():null);if(actor)actor.PlayJumpscare();if(ambienceSource)ambienceSource.Stop();if(sfxSource){if(zombieGroanClip)sfxSource.PlayOneShot(zombieGroanClip,.9f);else if(monsterGrowlClip)sfxSource.PlayOneShot(monsterGrowlClip,1f);}if(startOverlay){startOverlay.SetActive(true);UpdateStartScreen();}}
 }
 
 public class SimpleTouchStick : MonoBehaviour,IPointerDownHandler,IDragHandler,IPointerUpHandler
 {
-    public RectTransform knob;public static Vector2 Axis{get;private set;}Vector2 center;
-    void Start(){center=GetComponent<RectTransform>().sizeDelta*.5f;}
-    public void OnPointerDown(PointerEventData e){OnDrag(e);}
-    public void OnDrag(PointerEventData e){Vector2 local;if(RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)transform,e.position,e.pressEventCamera,out local)){Vector2 d=Vector2.ClampMagnitude(local-center,53);Axis=d/53;if(knob)knob.anchoredPosition=d;}}
-    public void OnPointerUp(PointerEventData e){Axis=Vector2.zero;if(knob)knob.anchoredPosition=Vector2.zero;}
+    public RectTransform knob;
+    public static Vector2 Axis{get;private set;}
+    Vector2 center;
+    int activePointer=int.MinValue;
+    void Start(){center=GetComponent<RectTransform>().rect.center;}
+    public void OnPointerDown(PointerEventData e){activePointer=e.pointerId;OnDrag(e);}
+    public void OnDrag(PointerEventData e){if(e.pointerId!=activePointer)return;Vector2 local;if(RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)transform,e.position,e.pressEventCamera,out local)){Vector2 d=Vector2.ClampMagnitude(local-center,53);Axis=d/53;if(knob)knob.anchoredPosition=d;}}
+    public void OnPointerUp(PointerEventData e){if(e.pointerId!=activePointer)return;activePointer=int.MinValue;Axis=Vector2.zero;if(knob)knob.anchoredPosition=Vector2.zero;}
 }
 public class TouchLookArea:MonoBehaviour,IPointerDownHandler,IDragHandler,IPointerUpHandler
 {
