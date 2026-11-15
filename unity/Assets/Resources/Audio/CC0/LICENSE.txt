@@ -1,0 +1,11 @@
+Audio assets in this folder are from the Kaino Free Asset Library (https://kaino.dev/library/sfx) and dedicated to the public domain under CC0 1.0 Universal.
+
+Files included:
+- ZombieGroan.mp3 — Zombie Groan 1 (crea-zombie-01)
+- MonsterGrowl.mp3 — Monster Growl 1 (crea-growl-01)
+- DarkDrone.mp3 — Dark Drone 1 (hor-drone-01)
+- HauntedDoorSlam.mp3 — Haunted Door Slam 1 (hor-door-slam-01)
+
+Kaino's license states these may be copied, modified, distributed, and used commercially without permission or attribution. Attribution is included as a courtesy.
+CC0 1.0 legal code: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+Source listing: https://kaino.dev/library/sfx
