@@ -190,11 +190,11 @@ public class WorldBootstrap : MonoBehaviour
         // Corridors and solid collision boundaries
         foreach(int side in new[]{-1,1})
         {
-            Box("Hall floor",new Vector3(side*11,-.22f,1),new Vector3(12,.44f,7),floorMat);
-            Box("Hall ceiling",new Vector3(side*11,3.5f,1),new Vector3(12,.3f,7),trimMat);
-            Box("Hall outer wall",new Vector3(side*17,1.6f,1),new Vector3(.3f,3.4f,7),wallMat);
-            Box("Hall rear wall",new Vector3(side*11,1.6f,-2.5f),new Vector3(12,3.4f,.3f),wallMat);
-            Box("Hall front wall",new Vector3(side*11,1.6f,4.5f),new Vector3(12,3.4f,.3f),wallMat);
+            Box("Hall floor",new Vector3(side*16,-.22f,1),new Vector3(22,.44f,7),floorMat);
+            Box("Hall ceiling",new Vector3(side*16,3.5f,1),new Vector3(22,.3f,7),trimMat);
+            Box("Hall outer wall",new Vector3(side*27,1.6f,1),new Vector3(.3f,3.4f,7),wallMat);
+            Box("Hall rear wall",new Vector3(side*16,1.6f,-2.5f),new Vector3(22,3.4f,.3f),wallMat);
+            Box("Hall front wall",new Vector3(side*16,1.6f,4.5f),new Vector3(22,3.4f,.3f),wallMat);
             // Emergency wall lights: simple emissive fixtures, no real-time point lights.
             Box("Hall lamp housing",new Vector3(side*10,2.95f,1),new Vector3(.8f,.12f,.7f),trimMat,true);
             var lamp=Box("Hall lamp",new Vector3(side*10,2.86f,1),new Vector3(.55f,.045f,.42f),MakeMat(new Color(.63f,.55f,.37f),0,.2f,true),true);
