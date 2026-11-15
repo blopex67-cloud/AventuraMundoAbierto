@@ -310,7 +310,9 @@ public class WorldBootstrap : MonoBehaviour
         if(monitorOpen)return;
         float x=moveStick?SimpleTouchStick.Axis.x:0,y=moveStick?SimpleTouchStick.Axis.y:0;
         if(Input.GetKey(KeyCode.A))x=-1;if(Input.GetKey(KeyCode.D))x=1;if(Input.GetKey(KeyCode.W))y=1;if(Input.GetKey(KeyCode.S))y=-1;
-        Vector3 move=playerRoot.right*x+playerRoot.forward*y;
+        Vector3 cameraForward = cameraRig ? Vector3.ProjectOnPlane(cameraRig.forward, Vector3.up).normalized : playerRoot.forward;
+        Vector3 cameraRight = cameraRig ? Vector3.ProjectOnPlane(cameraRig.right, Vector3.up).normalized : playerRoot.right;
+        Vector3 move=cameraRight*x+cameraForward*y;
         if(move.sqrMagnitude>1)move.Normalize();
         if (controller == null) return;
         controller.detectCollisions = true;
