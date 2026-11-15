@@ -133,10 +133,7 @@ public class WorldBootstrap : MonoBehaviour
     {
         var root=new GameObject(name).transform;root.position=pos;
         var bodyCollider=root.gameObject.AddComponent<CapsuleCollider>();bodyCollider.height=2.7f;bodyCollider.radius=.52f;bodyCollider.center=new Vector3(0,1.35f,0);
-        var body=GameObject.CreatePrimitive(PrimitiveType.Capsule);body.name=name+" body";body.transform.SetParent(root,false);body.transform.localPosition=new Vector3(0,.95f,0);body.transform.localScale=new Vector3(.8f,1.2f,.7f);body.GetComponent<Renderer>().sharedMaterial=MakeMat(color,.55f,.32f);
-        var head=GameObject.CreatePrimitive(PrimitiveType.Sphere);head.name=name+" mask";head.transform.SetParent(root,false);head.transform.localPosition=new Vector3(0,1.85f,.08f);head.transform.localScale=new Vector3(.95f,.8f,.75f);head.GetComponent<Renderer>().sharedMaterial=MakeMat(new Color(.16f,.18f,.19f),.6f,.45f);
-        foreach(float x in new[]{-.23f,.23f}){var eye=GameObject.CreatePrimitive(PrimitiveType.Sphere);eye.name="glowing eyes";eye.transform.SetParent(root,false);eye.transform.localPosition=new Vector3(x,1.9f,.43f);eye.transform.localScale=Vector3.one*.13f;eye.GetComponent<Renderer>().sharedMaterial=eyeMat;}
-        foreach(var c in root.GetComponentsInChildren<Collider>())Destroy(c);
+        var actor=root.gameObject.AddComponent<MimicActor>();actor.modelFile="the_mimic_dlc.glb";actor.modelScale=1f;
         return root;
     }
     void BuildThreats(){leftThreat=MakeThreat("The Warden",new Color(.24f,.29f,.31f),new Vector3(-15,0,1));rightThreat=MakeThreat("The Brass Guest",new Color(.30f,.22f,.13f),new Vector3(15,0,1));}
@@ -236,8 +233,8 @@ public class WorldBootstrap : MonoBehaviour
     void AdvanceThreats()
     {
         float difficulty=Mathf.Clamp01(nightTimer/NightLength);
-        if(leftThreat){float x=leftThreat.position.x;if(x<-6){x+=Mathf.Lerp(1.2f,2.1f,difficulty);if(Random.value<.48f)PlayThreatSound(leftThreatAudio);}else if(!leftClosed){TriggerLoss("EL VIGILANTE TE ENCONTRÓ");return;}else{x=-14;if(leftThreatAudio)leftThreatAudio.Stop();}leftThreat.position=new Vector3(x,0,1);}
-        if(rightThreat){float x=rightThreat.position.x;if(x>6){if(Random.value<Mathf.Lerp(.45f,.8f,difficulty)){x-=Mathf.Lerp(1.2f,2.2f,difficulty);if(Random.value<.55f)PlayThreatSound(rightThreatAudio);}}else if(!rightClosed){TriggerLoss("LA FIGURA TE ENCONTRÓ");return;}else{x=14;if(rightThreatAudio)rightThreatAudio.Stop();}rightThreat.position=new Vector3(x,0,1);}
+        if(leftThreat){float x=leftThreat.position.x;if(x<-6){x+=Mathf.Lerp(1.2f,2.1f,difficulty);var actor=leftThreat.GetComponent<MimicActor>();if(actor)actor.PlayWalk();if(Random.value<.48f)PlayThreatSound(leftThreatAudio);}else if(!leftClosed){TriggerLoss("EL VIGILANTE TE ENCONTRÓ");return;}else{x=-14;if(leftThreatAudio)leftThreatAudio.Stop();}leftThreat.position=new Vector3(x,0,1);}
+        if(rightThreat){float x=rightThreat.position.x;if(x>6){var actor=rightThreat.GetComponent<MimicActor>();if(actor)actor.PlayWalk();if(Random.value<Mathf.Lerp(.45f,.8f,difficulty)){x-=Mathf.Lerp(1.2f,2.2f,difficulty);if(actor)actor.PlayRun();if(Random.value<.55f)PlayThreatSound(rightThreatAudio);}}else if(!rightClosed){TriggerLoss("LA FIGURA TE ENCONTRÓ");return;}else{x=14;if(rightThreatAudio)rightThreatAudio.Stop();}rightThreat.position=new Vector3(x,0,1);}
         // Face the office when close to the entrance
         if(leftThreat)leftThreat.rotation=Quaternion.Euler(0,90,0);if(rightThreat)rightThreat.rotation=Quaternion.Euler(0,-90,0);
     }
@@ -250,7 +247,7 @@ public class WorldBootstrap : MonoBehaviour
         if(monitorOpen)cameraText.text=cameraNames[cameraIndex]+"\nToca SIGUIENTE CAM para cambiar";
         if(power<=0&&!monitorOpen){messageText.gameObject.SetActive(true);messageText.text="SIN ENERGÍA\nNo hagas ruido...";}
     }
-    void TriggerLoss(string text){ended=true;monitorOpen=false;messageText.gameObject.SetActive(true);messageText.text=text+"\n\nNOCHE TERMINADA";scareTime=2.5f;if(ambienceSource)ambienceSource.Stop();if(sfxSource){if(zombieGroanClip)sfxSource.PlayOneShot(zombieGroanClip,.9f);else if(monsterGrowlClip)sfxSource.PlayOneShot(monsterGrowlClip,1f);}}
+    void TriggerLoss(string text){ended=true;monitorOpen=false;messageText.gameObject.SetActive(true);messageText.text=text+"\n\nNOCHE TERMINADA";scareTime=2.5f;var actor=leftThreat&&leftThreat.position.x>-6?leftThreat.GetComponent<MimicActor>():rightThreat?rightThreat.GetComponent<MimicActor>():null;if(actor)actor.PlayJumpscare();if(ambienceSource)ambienceSource.Stop();if(sfxSource){if(zombieGroanClip)sfxSource.PlayOneShot(zombieGroanClip,.9f);else if(monsterGrowlClip)sfxSource.PlayOneShot(monsterGrowlClip,1f);}}
     void Win(){ended=true;messageText.gameObject.SetActive(true);messageText.text="6:00 AM\n\nSOBREVIVISTE A LA NOCHE";}
 }
 
