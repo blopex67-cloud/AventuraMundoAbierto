@@ -14,6 +14,8 @@ public class WorldBootstrap : MonoBehaviour
     Text statusText, cameraText, messageText;
     Image powerFill, monitorShade;
     Button leftDoorButton, rightDoorButton, monitorButton, lightButton;
+    AudioSource ambienceSource, sfxSource, leftThreatAudio, rightThreatAudio;
+    AudioClip ambienceClip, monsterGrowlClip, zombieGroanClip, doorSlamClip;
     Material wallMat, floorMat, metalMat, trimMat, eyeMat;
     bool leftClosed, rightClosed, monitorOpen, lightOn, ended;
     float yaw, pitch = 2f, power = 100f, nightTimer, aiTimer, scareTime;
@@ -44,7 +46,7 @@ public class WorldBootstrap : MonoBehaviour
     {
         Application.targetFrameRate = 60; QualitySettings.vSyncCount = 0;
         QualitySettings.shadows = ShadowQuality.HardOnly; QualitySettings.shadowDistance = 22;
-        BuildMaterials(); BuildOffice(); BuildPlayer(); BuildThreats(); BuildHUD(); UpdateHUD();
+        BuildMaterials(); BuildOffice(); BuildPlayer(); BuildThreats(); BuildAudio(); BuildHUD(); UpdateHUD();
     }
 
     void BuildMaterials()
@@ -138,6 +140,26 @@ public class WorldBootstrap : MonoBehaviour
         return root;
     }
     void BuildThreats(){leftThreat=MakeThreat("The Warden",new Color(.24f,.29f,.31f),new Vector3(-15,0,1));rightThreat=MakeThreat("The Brass Guest",new Color(.30f,.22f,.13f),new Vector3(15,0,1));}
+    void BuildAudio()
+    {
+        ambienceClip=Resources.Load<AudioClip>("Audio/CC0/DarkDrone");
+        monsterGrowlClip=Resources.Load<AudioClip>("Audio/CC0/MonsterGrowl");
+        zombieGroanClip=Resources.Load<AudioClip>("Audio/CC0/ZombieGroan");
+        doorSlamClip=Resources.Load<AudioClip>("Audio/CC0/HauntedDoorSlam");
+        var ambienceObject=new GameObject("CC0 horror ambience");ambienceObject.transform.SetParent(transform,false);
+        ambienceSource=ambienceObject.AddComponent<AudioSource>();ambienceSource.clip=ambienceClip;ambienceSource.loop=true;ambienceSource.volume=.12f;ambienceSource.spatialBlend=0;
+        if(ambienceClip)ambienceSource.Play();
+        sfxSource=gameCamera.gameObject.AddComponent<AudioSource>();sfxSource.playOnAwake=false;sfxSource.spatialBlend=0;sfxSource.volume=.72f;
+        leftThreatAudio=MakeThreatAudio(leftThreat);rightThreatAudio=MakeThreatAudio(rightThreat);
+    }
+    AudioSource MakeThreatAudio(Transform threat)
+    {
+        var source=threat.gameObject.AddComponent<AudioSource>();source.playOnAwake=false;source.spatialBlend=1f;source.minDistance=2f;source.maxDistance=24f;source.rolloffMode=AudioRolloffMode.Linear;source.volume=.8f;return source;
+    }
+    void PlayThreatSound(AudioSource source)
+    {
+        if(source&&monsterGrowlClip&&!source.isPlaying)source.PlayOneShot(monsterGrowlClip,Random.Range(.55f,.9f));
+    }
 
     void BuildHUD()
     {
@@ -169,8 +191,9 @@ public class WorldBootstrap : MonoBehaviour
     Button MakeButton(Transform parent,string text,Vector2 anchor,Vector2 pos,Vector2 size,UnityEngine.Events.UnityAction action)
     {var o=Panel(parent,anchor,pos,size,new Color(.055f,.075f,.09f,.88f));var b=o.AddComponent<Button>();b.targetGraphic=o.GetComponent<Image>();b.onClick.AddListener(action);var t=Label(o.transform,text,16,TextAnchor.MiddleCenter,Vector2.zero,size- new Vector2(14,8));var r=t.rectTransform;r.anchorMin=Vector2.zero;r.anchorMax=Vector2.one;r.pivot=new Vector2(.5f,.5f);r.anchoredPosition=Vector2.zero;return b;}
 
-    void ToggleLeftDoor(){if(!ended){leftClosed=!leftClosed;}}
-    void ToggleRightDoor(){if(!ended){rightClosed=!rightClosed;}}
+    void ToggleLeftDoor(){if(!ended){leftClosed=!leftClosed;PlayDoorSound();}}
+    void ToggleRightDoor(){if(!ended){rightClosed=!rightClosed;PlayDoorSound();}}
+    void PlayDoorSound(){if(sfxSource&&doorSlamClip)sfxSource.PlayOneShot(doorSlamClip,.45f);}
     void ToggleLight(){if(!ended&&power>0){lightOn=!lightOn;if(flashlight)flashlight.enabled=lightOn;}}
     void ToggleMonitor(){if(!ended&&power>0){monitorOpen=!monitorOpen;cameraText.gameObject.SetActive(monitorOpen);monitorShade.gameObject.SetActive(monitorOpen);}}
     void NextCamera(){if(monitorOpen){cameraIndex=(cameraIndex+1)%cameraNames.Length;cameraText.text=cameraNames[cameraIndex];}}
@@ -213,8 +236,8 @@ public class WorldBootstrap : MonoBehaviour
     void AdvanceThreats()
     {
         float difficulty=Mathf.Clamp01(nightTimer/NightLength);
-        if(leftThreat){float x=leftThreat.position.x;if(x<-6)x+=Mathf.Lerp(1.2f,2.1f,difficulty);else if(!leftClosed){TriggerLoss("EL VIGILANTE TE ENCONTRÓ");return;}else x=-14;leftThreat.position=new Vector3(x,0,1);}
-        if(rightThreat){float x=rightThreat.position.x;if(x>6)x-=Random.value<Mathf.Lerp(.45f,.8f,difficulty)?Mathf.Lerp(1.2f,2.2f,difficulty):0;else if(!rightClosed){TriggerLoss("LA FIGURA TE ENCONTRÓ");return;}else x=14;rightThreat.position=new Vector3(x,0,1);}
+        if(leftThreat){float x=leftThreat.position.x;if(x<-6){x+=Mathf.Lerp(1.2f,2.1f,difficulty);if(Random.value<.48f)PlayThreatSound(leftThreatAudio);}else if(!leftClosed){TriggerLoss("EL VIGILANTE TE ENCONTRÓ");return;}else{x=-14;if(leftThreatAudio)leftThreatAudio.Stop();}leftThreat.position=new Vector3(x,0,1);}
+        if(rightThreat){float x=rightThreat.position.x;if(x>6){if(Random.value<Mathf.Lerp(.45f,.8f,difficulty)){x-=Mathf.Lerp(1.2f,2.2f,difficulty);if(Random.value<.55f)PlayThreatSound(rightThreatAudio);}}else if(!rightClosed){TriggerLoss("LA FIGURA TE ENCONTRÓ");return;}else{x=14;if(rightThreatAudio)rightThreatAudio.Stop();}rightThreat.position=new Vector3(x,0,1);}
         // Face the office when close to the entrance
         if(leftThreat)leftThreat.rotation=Quaternion.Euler(0,90,0);if(rightThreat)rightThreat.rotation=Quaternion.Euler(0,-90,0);
     }
@@ -227,7 +250,7 @@ public class WorldBootstrap : MonoBehaviour
         if(monitorOpen)cameraText.text=cameraNames[cameraIndex]+"\nToca SIGUIENTE CAM para cambiar";
         if(power<=0&&!monitorOpen){messageText.gameObject.SetActive(true);messageText.text="SIN ENERGÍA\nNo hagas ruido...";}
     }
-    void TriggerLoss(string text){ended=true;monitorOpen=false;messageText.gameObject.SetActive(true);messageText.text=text+"\n\nNOCHE TERMINADA";scareTime=2.5f;}
+    void TriggerLoss(string text){ended=true;monitorOpen=false;messageText.gameObject.SetActive(true);messageText.text=text+"\n\nNOCHE TERMINADA";scareTime=2.5f;if(ambienceSource)ambienceSource.Stop();if(sfxSource){if(zombieGroanClip)sfxSource.PlayOneShot(zombieGroanClip,.9f);else if(monsterGrowlClip)sfxSource.PlayOneShot(monsterGrowlClip,1f);}}
     void Win(){ended=true;messageText.gameObject.SetActive(true);messageText.text="6:00 AM\n\nSOBREVIVISTE A LA NOCHE";}
 }
 
