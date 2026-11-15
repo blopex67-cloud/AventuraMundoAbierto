@@ -6,199 +6,242 @@ using System.Collections.Generic;
 public class WorldBootstrap : MonoBehaviour
 {
     public static WorldBootstrap Instance;
-    public Transform player;
-    public Text hud;
-    int crystals;
-    float timeOfDay;
-    readonly List<Transform> pickups = new List<Transform>();
+    CharacterController controller;
+    Transform playerRoot, cameraRig, leftDoor, rightDoor, leftThreat, rightThreat;
+    Camera gameCamera;
+    Light flashlight;
+    SimpleTouchStick moveStick;
+    Text statusText, cameraText, messageText;
+    Image powerFill, monitorShade;
+    Button leftDoorButton, rightDoorButton, monitorButton, lightButton;
+    Material wallMat, floorMat, metalMat, trimMat, eyeMat;
+    bool leftClosed, rightClosed, monitorOpen, lightOn, ended;
+    float yaw, pitch = 2f, power = 100f, nightTimer, aiTimer, scareTime;
+    int cameraIndex = 0;
+    const float NightLength = 240f;
+    readonly string[] cameraNames = { "CAM 01  |  VESTÍBULO", "CAM 02  |  PASILLO OESTE", "CAM 03  |  PASILLO ESTE", "CAM 04  |  ALMACÉN" };
+    readonly Vector3[] cameraPositions = { new Vector3(0,2.1f,9), new Vector3(-11,2.1f,2), new Vector3(11,2.1f,2), new Vector3(0,2.2f,-10) };
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void EnsureGameStarts()
     {
+        SetLandscape();
+        if (FindObjectOfType<WorldBootstrap>() == null) new GameObject("Nightwatch Game").AddComponent<WorldBootstrap>();
+    }
+    static void SetLandscape()
+    {
         Screen.orientation = ScreenOrientation.LandscapeLeft;
-        Screen.autorotateToPortrait = false;
-        Screen.autorotateToPortraitUpsideDown = false;
-        Screen.autorotateToLandscapeLeft = true;
-        Screen.autorotateToLandscapeRight = true;
-        if (FindObjectOfType<WorldBootstrap>() == null)
-        {
-            var root = new GameObject("World Bootstrap (fallback)");
-            root.AddComponent<WorldBootstrap>();
-        }
+        Screen.autorotateToPortrait = false; Screen.autorotateToPortraitUpsideDown = false;
+        Screen.autorotateToLandscapeLeft = true; Screen.autorotateToLandscapeRight = true;
     }
 
     void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
-        Instance = this;
-        Screen.orientation = ScreenOrientation.LandscapeLeft;
-        Screen.autorotateToPortrait = false;
-        Screen.autorotateToPortraitUpsideDown = false;
-        Screen.autorotateToLandscapeLeft = true;
-        Screen.autorotateToLandscapeRight = true;
+        Instance = this; SetLandscape();
     }
-
     void Start()
     {
-        Application.targetFrameRate = 60;
-        QualitySettings.vSyncCount = 0;
-        BuildWorld();
-        BuildPlayer();
-        BuildUI();
+        Application.targetFrameRate = 60; QualitySettings.vSyncCount = 0;
+        QualitySettings.shadows = ShadowQuality.HardOnly; QualitySettings.shadowDistance = 22;
+        BuildMaterials(); BuildOffice(); BuildPlayer(); BuildThreats(); BuildHUD(); UpdateHUD();
     }
 
-    Material M(Color c, float metallic = 0f)
+    void BuildMaterials()
     {
-        var shader = Shader.Find("Standard");
-        if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null) shader = Shader.Find("Sprites/Default");
-        var m = new Material(shader);
-        m.color = c;
-        if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", metallic);
-        if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", .25f);
+        wallMat = MakeMat(new Color(.17f,.19f,.20f), .08f, .12f);
+        floorMat = MakeMat(new Color(.11f,.12f,.13f), .12f, .22f);
+        metalMat = MakeMat(new Color(.23f,.25f,.26f), .72f, .42f);
+        trimMat = MakeMat(new Color(.055f,.065f,.07f), .45f, .3f);
+        eyeMat = MakeMat(new Color(1f,.18f,.025f), .1f, .2f, true);
+    }
+    Material MakeMat(Color color, float metallic=0, float smooth=.25f, bool emission=false)
+    {
+        Shader sh = Shader.Find("Standard"); if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit");
+        var m = new Material(sh); m.color = color;
+        if(m.HasProperty("_Metallic")) m.SetFloat("_Metallic", metallic);
+        if(m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", smooth);
+        if(emission && m.HasProperty("_EmissionColor")){m.EnableKeyword("_EMISSION");m.SetColor("_EmissionColor",color*1.7f);}
         return m;
     }
-
-    GameObject Cube(string n, Vector3 p, Vector3 s, Color c, Transform parent = null)
+    GameObject Box(string name, Vector3 pos, Vector3 size, Material mat, bool collider=true, Transform parent=null)
     {
-        var o = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        o.name = n; o.transform.position = p; o.transform.localScale = s;
-        if (parent) o.transform.SetParent(parent);
-        o.GetComponent<Renderer>().material = M(c);
-        return o;
+        var o = GameObject.CreatePrimitive(PrimitiveType.Cube); o.name=name; o.transform.position=pos; o.transform.localScale=size;
+        if(parent)o.transform.SetParent(parent,true);
+        var r=o.GetComponent<Renderer>(); if(mat)r.sharedMaterial=mat;
+        if(!collider){var c=o.GetComponent<Collider>();if(c)Destroy(c);} return o;
     }
-
-    void BuildWorld()
+    void BuildOffice()
     {
-        var groundMat = M(new Color(.24f, .48f, .25f));
-        for (int x = -4; x <= 4; x++) for (int z = -4; z <= 4; z++)
+        RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Flat;
+        RenderSettings.ambientLight=new Color(.11f,.13f,.16f); RenderSettings.fog=true; RenderSettings.fogColor=new Color(.045f,.055f,.065f); RenderSettings.fogMode=FogMode.ExponentialSquared; RenderSettings.fogDensity=.018f;
+        Box("Office floor",new Vector3(0,-.22f,0),new Vector3(10,.44f,10),floorMat);
+        Box("Office ceiling",new Vector3(0,3.5f,0),new Vector3(10,.3f,10),trimMat);
+        Box("Back wall",new Vector3(0,1.6f,-5),new Vector3(10,3.4f,.3f),wallMat);
+        Box("Front wall left",new Vector3(-3.4f,1.6f,5),new Vector3(3.2f,3.4f,.3f),wallMat);
+        Box("Front wall right",new Vector3(3.4f,1.6f,5),new Vector3(3.2f,3.4f,.3f),wallMat);
+        Box("Front lintel",new Vector3(0,3.1f,5),new Vector3(3.6f,.4f,.3f),wallMat);
+        Box("Left wall rear",new Vector3(-5,1.6f,-2.9f),new Vector3(.3f,3.4f,4.2f),wallMat);
+        Box("Left wall front",new Vector3(-5,1.6f,4.1f),new Vector3(.3f,3.4f,1.8f),wallMat);
+        Box("Right wall rear",new Vector3(5,1.6f,-2.9f),new Vector3(.3f,3.4f,4.2f),wallMat);
+        Box("Right wall front",new Vector3(5,1.6f,4.1f),new Vector3(.3f,3.4f,1.8f),wallMat);
+        // Corridors and solid collision boundaries
+        foreach(int side in new[]{-1,1})
         {
-            float h = Mathf.PerlinNoise((x + 10) * .16f, (z + 10) * .16f) * 2.2f;
-            var t = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            t.name = "Island terrain"; t.transform.position = new Vector3(x * 12, h - 1.1f, z * 12);
-            t.transform.localScale = new Vector3(12, 2.2f, 12);
-            t.GetComponent<Renderer>().sharedMaterial = groundMat;
+            Box("Hall floor",new Vector3(side*11,-.22f,1),new Vector3(12,.44f,7),floorMat);
+            Box("Hall ceiling",new Vector3(side*11,3.5f,1),new Vector3(12,.3f,7),trimMat);
+            Box("Hall outer wall",new Vector3(side*17,1.6f,1),new Vector3(.3f,3.4f,7),wallMat);
+            Box("Hall rear wall",new Vector3(side*11,1.6f,-2.5f),new Vector3(12,3.4f,.3f),wallMat);
+            Box("Hall front wall",new Vector3(side*11,1.6f,4.5f),new Vector3(12,3.4f,.3f),wallMat);
+            Box("Door frame",new Vector3(side*5,1.5f,1),new Vector3(.38f,3.05f,2.2f),metalMat,false);
+            var d=Box(side<0?"West security shutter":"East security shutter",new Vector3(side*4.88f,1.4f,1),new Vector3(.22f,2.8f,1.7f),metalMat);
+            if(side<0)leftDoor=d.transform;else rightDoor=d.transform;
+            for(int j=0;j<3;j++)Box("Shutter rib",new Vector3(side*4.74f,.55f+j*.76f,1),new Vector3(.06f,.07f,1.62f),trimMat,false);
+            // Emergency wall lights: simple emissive fixtures, no real-time point lights.
+            Box("Hall lamp housing",new Vector3(side*10,2.95f,1),new Vector3(.8f,.12f,.7f),trimMat,false);
+            var lamp=Box("Hall lamp",new Vector3(side*10,2.86f,1),new Vector3(.55f,.045f,.42f),MakeMat(new Color(.63f,.55f,.37f),0,.2f,true),false);
         }
-        var sand = M(new Color(.77f, .68f, .43f));
-        for (int i = 0; i < 55; i++)
+        // Office props and silhouette-breaking geometry
+        Box("Desk top",new Vector3(0,1.05f,2.15f),new Vector3(4.2f,.22f,1.35f),metalMat);
+        Box("Desk front",new Vector3(0,.52f,2.72f),new Vector3(4.2f,.95f,.18f),trimMat);
+        for(int x=-1;x<=1;x+=2)for(int z=-1;z<=1;z+=2)Box("Desk leg",new Vector3(x*1.8f,.28f,2.15f+z*.48f),new Vector3(.12f,.56f,.12f),metalMat);
+        Box("Monitor casing",new Vector3(0,1.85f,2.45f),new Vector3(1.8f,1.12f,.18f),trimMat,false);
+        Box("Monitor screen",new Vector3(0,1.86f,2.34f),new Vector3(1.58f,.83f,.035f),MakeMat(new Color(.035f,.10f,.12f),.12f,.18f,true),false);
+        for(int i=0;i<5;i++)
         {
-            float a = i * 2.399f, r = 40 + Mathf.Sin(i * 4) * 6;
-            Vector3 p = new Vector3(Mathf.Cos(a) * r, 0, Mathf.Sin(a) * r);
-            var tree = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            tree.transform.position = p + Vector3.up * 2; tree.transform.localScale = new Vector3(.55f, 2, .55f);
-            tree.GetComponent<Renderer>().sharedMaterial = sand;
-            var crown = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            crown.transform.position = p + Vector3.up * 4.6f; crown.transform.localScale = Vector3.one * 3.6f;
-            crown.GetComponent<Renderer>().sharedMaterial = M(i % 2 == 0 ? new Color(.12f, .36f, .17f) : new Color(.2f, .44f, .19f));
+            Box("Wall acoustic panel",new Vector3(-3.8f+i*1.9f,2.45f,-4.79f),new Vector3(1.4f,.75f,.1f),i%2==0?trimMat:metalMat,false);
         }
-        var water = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        water.name = "Ocean"; water.transform.position = new Vector3(0, -2.4f, 0); water.transform.localScale = new Vector3(140, 1, 140);
-        water.GetComponent<Renderer>().sharedMaterial = M(new Color(.08f, .36f, .55f), .25f);
-        for (int i = 0; i < 10; i++)
-        {
-            float a = i * 2.4f; Vector3 p = new Vector3(Mathf.Cos(a) * Random.Range(9, 34), 2.5f, Mathf.Sin(a) * Random.Range(9, 34));
-            var c = GameObject.CreatePrimitive(PrimitiveType.Sphere); c.name = "Cristal"; c.transform.position = p;
-            c.transform.localScale = new Vector3(.8f, 1.5f, .8f); c.GetComponent<Renderer>().sharedMaterial = M(new Color(.1f, .9f, 1f), .6f); pickups.Add(c.transform);
-        }
-        var light = new GameObject("Sun").AddComponent<Light>();
-        light.type = LightType.Directional; light.intensity = 1.15f; light.transform.rotation = Quaternion.Euler(48, -35, 0);
-        RenderSettings.ambientLight = new Color(.58f, .62f, .67f);
-        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        var lampLight=new GameObject("Office overhead light").AddComponent<Light>(); lampLight.type=LightType.Directional;lampLight.intensity=.42f;lampLight.color=new Color(.70f,.78f,1f);lampLight.transform.rotation=Quaternion.Euler(48,-25,0);lampLight.shadows=LightShadows.Hard;
+        // Camera housings at corridor ends (visual navigation cues)
+        foreach(int side in new[]{-1,1})
+        {var cam=GameObject.CreatePrimitive(PrimitiveType.Cylinder);cam.name="CCTV housing";cam.transform.position=new Vector3(side*15,2.8f,-1.5f);cam.transform.localScale=new Vector3(.24f,.34f,.24f);cam.transform.rotation=Quaternion.Euler(0,0,90);cam.GetComponent<Renderer>().sharedMaterial=metalMat;}
     }
 
     void BuildPlayer()
     {
-        var p = new GameObject("Explorer"); p.transform.position = new Vector3(0, 2, 0);
-        var body = GameObject.CreatePrimitive(PrimitiveType.Capsule); body.name = "Player body"; body.transform.SetParent(p.transform); body.transform.localPosition = Vector3.zero;
-        body.GetComponent<Renderer>().sharedMaterial = M(new Color(.9f, .43f, .13f));
-        var rb = p.AddComponent<Rigidbody>(); rb.constraints = RigidbodyConstraints.FreezeRotation; rb.mass = 1;
-        p.AddComponent<ExplorerController>(); player = p.transform;
-        var cam = new GameObject("Follow Camera").AddComponent<Camera>(); cam.tag = "MainCamera";
-        cam.clearFlags = CameraClearFlags.SolidColor; cam.backgroundColor = new Color(.35f, .65f, .86f);
-        cam.transform.position = p.transform.position + new Vector3(0, 5, -8); cam.transform.LookAt(p.transform.position + Vector3.up * 1.2f);
-        cam.gameObject.AddComponent<CameraFollow>();
+        playerRoot=new GameObject("First Person Security Guard").transform;playerRoot.position=new Vector3(0,0,-1.2f);
+        controller=playerRoot.gameObject.AddComponent<CharacterController>();controller.height=1.8f;controller.radius=.34f;controller.center=new Vector3(0,.9f,0);controller.stepOffset=.25f;controller.slopeLimit=45;controller.skinWidth=.04f;
+        cameraRig=new GameObject("First Person Camera").transform;cameraRig.SetParent(playerRoot,false);cameraRig.localPosition=new Vector3(0,1.58f,0);
+        gameCamera=cameraRig.gameObject.AddComponent<Camera>();gameCamera.tag="MainCamera";gameCamera.fieldOfView=72;gameCamera.nearClipPlane=.08f;gameCamera.farClipPlane=70;gameCamera.clearFlags=CameraClearFlags.SolidColor;gameCamera.backgroundColor=new Color(.025f,.035f,.05f);
+        gameCamera.gameObject.AddComponent<AudioListener>();
+        flashlight = gameCamera.gameObject.AddComponent<Light>(); flashlight.type = LightType.Spot; flashlight.range = 14f; flashlight.spotAngle = 58f; flashlight.intensity = 2.3f; flashlight.shadows = LightShadows.None; flashlight.color = new Color(.72f,.82f,1f); flashlight.enabled = false;
     }
 
-    void BuildUI()
+    Transform MakeThreat(string name, Color color, Vector3 pos)
     {
-        var canvasObj = new GameObject("Mobile HUD"); var canvas = canvasObj.AddComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        var scaler = canvasObj.AddComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize; scaler.referenceResolution = new Vector2(960, 540);
-        canvasObj.AddComponent<GraphicRaycaster>();
-        var ev = new GameObject("EventSystem"); ev.AddComponent<EventSystem>(); ev.AddComponent<StandaloneInputModule>();
-        hud = Label(canvas.transform, "CRISTALES  0 / 10\nExplora la isla y encuentra los cristales", 24, TextAnchor.UpperLeft, new Vector2(20, -20), new Vector2(560, 115));
-        Button(canvas.transform, "↑", new Vector2(-100, 100), new Vector2(120, 120), () => { if (player) player.GetComponent<Rigidbody>().AddForce(Vector3.up * 6, ForceMode.VelocityChange); });
-        Button(canvas.transform, "✦", new Vector2(-235, 90), new Vector2(120, 120), Collect);
-        Label(canvas.transform, "MOVER: JOYSTICK\nMIRAR: ARRASTRAR LADO DERECHO", 16, TextAnchor.LowerLeft, new Vector2(18, 22), new Vector2(430, 70));
-        var stickRoot = new GameObject("Move Joystick"); stickRoot.transform.SetParent(canvas.transform, false); var bg = stickRoot.AddComponent<Image>(); bg.color = new Color(.04f, .08f, .12f, .42f);
-        var sr = stickRoot.GetComponent<RectTransform>(); sr.anchorMin = new Vector2(0, 0); sr.anchorMax = new Vector2(0, 0); sr.pivot = new Vector2(0, 0); sr.anchoredPosition = new Vector2(32, 110); sr.sizeDelta = new Vector2(170, 170);
-        var stick = stickRoot.AddComponent<SimpleTouchStick>();
-        var knob = new GameObject("Joystick Knob"); knob.transform.SetParent(stickRoot.transform, false); var ki = knob.AddComponent<Image>(); ki.color = new Color(.8f, .9f, 1f, .55f);
-        var kr = knob.GetComponent<RectTransform>(); kr.anchorMin = new Vector2(.5f, .5f); kr.anchorMax = new Vector2(.5f, .5f); kr.pivot = new Vector2(.5f, .5f); kr.sizeDelta = new Vector2(72, 72); stick.knob = kr;
+        var root=new GameObject(name).transform;root.position=pos;
+        var bodyCollider=root.gameObject.AddComponent<CapsuleCollider>();bodyCollider.height=2.7f;bodyCollider.radius=.52f;bodyCollider.center=new Vector3(0,1.35f,0);
+        var body=GameObject.CreatePrimitive(PrimitiveType.Capsule);body.name=name+" body";body.transform.SetParent(root,false);body.transform.localPosition=new Vector3(0,.95f,0);body.transform.localScale=new Vector3(.8f,1.2f,.7f);body.GetComponent<Renderer>().sharedMaterial=MakeMat(color,.55f,.32f);
+        var head=GameObject.CreatePrimitive(PrimitiveType.Sphere);head.name=name+" mask";head.transform.SetParent(root,false);head.transform.localPosition=new Vector3(0,1.85f,.08f);head.transform.localScale=new Vector3(.95f,.8f,.75f);head.GetComponent<Renderer>().sharedMaterial=MakeMat(new Color(.16f,.18f,.19f),.6f,.45f);
+        foreach(float x in new[]{-.23f,.23f}){var eye=GameObject.CreatePrimitive(PrimitiveType.Sphere);eye.name="glowing eyes";eye.transform.SetParent(root,false);eye.transform.localPosition=new Vector3(x,1.9f,.43f);eye.transform.localScale=Vector3.one*.13f;eye.GetComponent<Renderer>().sharedMaterial=eyeMat;}
+        foreach(var c in root.GetComponentsInChildren<Collider>())Destroy(c);
+        return root;
     }
+    void BuildThreats(){leftThreat=MakeThreat("The Warden",new Color(.24f,.29f,.31f),new Vector3(-15,0,1));rightThreat=MakeThreat("The Brass Guest",new Color(.30f,.22f,.13f),new Vector3(15,0,1));}
 
-    Text Label(Transform root, string text, int size, TextAnchor anchor, Vector2 pos, Vector2 dims)
+    void BuildHUD()
     {
-        var o = new GameObject("HUD Text"); o.transform.SetParent(root, false); var t = o.AddComponent<Text>(); t.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        t.text = text; t.fontSize = size; t.color = Color.white; t.alignment = anchor; t.raycastTarget = false;
-        var r = o.GetComponent<RectTransform>(); r.anchorMin = new Vector2(0, 1); r.anchorMax = new Vector2(0, 1); r.pivot = new Vector2(0, 1); r.anchoredPosition = pos; r.sizeDelta = dims;
-        var sh = o.AddComponent<Shadow>(); sh.effectColor = Color.black; sh.effectDistance = new Vector2(2, -2); return t;
+        var eventObj=new GameObject("Touch Event System");eventObj.AddComponent<EventSystem>();eventObj.AddComponent<StandaloneInputModule>();
+        var canvasObj=new GameObject("Nightwatch HUD");var canvas=canvasObj.AddComponent<Canvas>();canvas.renderMode=RenderMode.ScreenSpaceOverlay;canvasObj.AddComponent<CanvasScaler>().uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;canvasObj.GetComponent<CanvasScaler>().referenceResolution=new Vector2(960,540);canvasObj.AddComponent<GraphicRaycaster>();
+        statusText=Label(canvas.transform,"12:00 AM\nNIGHT 1",22,TextAnchor.UpperLeft,new Vector2(25,-20),new Vector2(210,70));
+        var powerBack=Panel(canvas.transform,new Vector2(1,0),new Vector2(-25,24),new Vector2(220,34),new Color(.02f,.03f,.04f,.8f));powerFill=Panel(powerBack.transform,new Vector2(0,0),new Vector2(3,3),new Vector2(210,24),new Color(.3f,.85f,.46f,.95f)).GetComponent<Image>();
+        Label(canvas.transform,"ENERGÍA",15,TextAnchor.LowerRight,new Vector2(-25,64),new Vector2(220,26));
+        cameraText=Label(canvas.transform,"",18,TextAnchor.UpperCenter,new Vector2(0,-18),new Vector2(520,45));cameraText.gameObject.SetActive(false);
+        messageText=Label(canvas.transform,"",26,TextAnchor.MiddleCenter,Vector2.zero,new Vector2(620,180));messageText.gameObject.SetActive(false);
+        monitorShade=Panel(canvas.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(960,540),new Color(.02f,.08f,.09f,.28f)).GetComponent<Image>();monitorShade.gameObject.SetActive(false);
+        // Look gesture area is created before buttons so controls stay tappable above it.
+        var look=Panel(canvas.transform,new Vector2(1,0),new Vector2(-250,100),new Vector2(400,330),new Color(0,0,0,.01f));look.AddComponent<TouchLookArea>();
+        // Right-side buttons: doors, light and surveillance tablet.
+        leftDoorButton=MakeButton(canvas.transform,"PUERTA OESTE",new Vector2(1,0),new Vector2(-235,165),new Vector2(205,68),ToggleLeftDoor);
+        rightDoorButton=MakeButton(canvas.transform,"PUERTA ESTE",new Vector2(1,0),new Vector2(-20,165),new Vector2(205,68),ToggleRightDoor);
+        lightButton=MakeButton(canvas.transform,"LUZ",new Vector2(1,0),new Vector2(-235,88),new Vector2(205,62),ToggleLight);
+        monitorButton=MakeButton(canvas.transform,"CÁMARAS",new Vector2(.5f,0),new Vector2(0,18),new Vector2(230,70),ToggleMonitor);
+        MakeButton(canvas.transform,"SIGUIENTE CAM",new Vector2(.5f,0),new Vector2(0,98),new Vector2(230,58),NextCamera);
+        // Joystick left bottom
+        var stickObj=Panel(canvas.transform,new Vector2(0,0),new Vector2(38,34),new Vector2(156,156),new Color(.08f,.12f,.16f,.48f));moveStick=stickObj.AddComponent<SimpleTouchStick>();
+        var knob=Panel(stickObj.transform,new Vector2(.5f,.5f),Vector2.zero,new Vector2(62,62),new Color(.7f,.8f,.9f,.55f));moveStick.knob=knob.GetComponent<RectTransform>();
+        Label(canvas.transform,"MOVER",14,TextAnchor.LowerLeft,new Vector2(49,195),new Vector2(130,25));
     }
+    Text Label(Transform parent,string text,int size,TextAnchor align,Vector2 pos,Vector2 sizeDelta)
+    {var o=new GameObject("Text");o.transform.SetParent(parent,false);var t=o.AddComponent<Text>();t.font=Resources.GetBuiltinResource<Font>("Arial.ttf");t.text=text;t.fontSize=size;t.color=Color.white;t.alignment=align;t.raycastTarget=false;var r=t.rectTransform;r.anchorMin=new Vector2(0,1);r.anchorMax=new Vector2(0,1);r.pivot=new Vector2(0,1);r.anchoredPosition=pos;r.sizeDelta=sizeDelta;return t;}
+    GameObject Panel(Transform parent,Vector2 anchor,Vector2 pos,Vector2 size,Color color)
+    {var o=new GameObject("Panel");o.transform.SetParent(parent,false);var im=o.AddComponent<Image>();im.color=color;im.raycastTarget=(color.a>.01f);var r=o.GetComponent<RectTransform>();r.anchorMin=anchor;r.anchorMax=anchor;r.pivot=anchor;r.anchoredPosition=pos;r.sizeDelta=size;return o;}
+    Button MakeButton(Transform parent,string text,Vector2 anchor,Vector2 pos,Vector2 size,UnityEngine.Events.UnityAction action)
+    {var o=Panel(parent,anchor,pos,size,new Color(.055f,.075f,.09f,.88f));var b=o.AddComponent<Button>();b.targetGraphic=o.GetComponent<Image>();b.onClick.AddListener(action);var t=Label(o.transform,text,16,TextAnchor.MiddleCenter,Vector2.zero,size- new Vector2(14,8));var r=t.rectTransform;r.anchorMin=Vector2.zero;r.anchorMax=Vector2.one;r.pivot=new Vector2(.5f,.5f);r.anchoredPosition=Vector2.zero;return b;}
 
-    void Button(Transform root, string text, Vector2 anchored, Vector2 size, UnityEngine.Events.UnityAction action)
-    {
-        var o = new GameObject("Button " + text); o.transform.SetParent(root, false); var im = o.AddComponent<Image>(); im.color = new Color(.06f, .12f, .16f, .6f);
-        var b = o.AddComponent<Button>(); b.targetGraphic = im; b.onClick.AddListener(action); var r = o.GetComponent<RectTransform>();
-        r.anchorMin = new Vector2(1, 0); r.anchorMax = new Vector2(1, 0); r.pivot = new Vector2(1, 0); r.anchoredPosition = anchored; r.sizeDelta = size;
-        var tx = new GameObject("Label").AddComponent<Text>(); tx.transform.SetParent(o.transform, false); tx.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        tx.text = text; tx.fontSize = 52; tx.color = Color.white; tx.alignment = TextAnchor.MiddleCenter; tx.rectTransform.anchorMin = Vector2.zero; tx.rectTransform.anchorMax = Vector2.one; tx.rectTransform.offsetMin = Vector2.zero; tx.rectTransform.offsetMax = Vector2.zero;
-    }
-
-    void Collect()
-    {
-        if (!player) return; Transform nearest = null; float d = 4.8f;
-        foreach (var p in pickups) if (p) { float n = Vector3.Distance(player.position, p.position); if (n < d) { d = n; nearest = p; } }
-        if (nearest) { pickups.Remove(nearest); Destroy(nearest.gameObject); crystals++; if (hud) hud.text = $"CRISTALES  {crystals} / 10\n" + (crystals >= 10 ? "¡Misión completada!" : "¡Cristal encontrado!"); }
-    }
+    void ToggleLeftDoor(){if(!ended){leftClosed=!leftClosed;}}
+    void ToggleRightDoor(){if(!ended){rightClosed=!rightClosed;}}
+    void ToggleLight(){if(!ended&&power>0){lightOn=!lightOn;if(flashlight)flashlight.enabled=lightOn;}}
+    void ToggleMonitor(){if(!ended&&power>0){monitorOpen=!monitorOpen;cameraText.gameObject.SetActive(monitorOpen);monitorShade.gameObject.SetActive(monitorOpen);}}
+    void NextCamera(){if(monitorOpen){cameraIndex=(cameraIndex+1)%cameraNames.Length;cameraText.text=cameraNames[cameraIndex];}}
 
     void Update()
     {
-        timeOfDay += Time.deltaTime * .015f; var sun = FindObjectOfType<Light>();
-        if (sun && sun.type == LightType.Directional) { sun.transform.rotation = Quaternion.Euler(20 + Mathf.Sin(timeOfDay) * 45, -35, 0); sun.intensity = .65f + (Mathf.Sin(timeOfDay) + 1) * .4f; }
+        if(ended){if(scareTime>0){scareTime-=Time.deltaTime;gameCamera.fieldOfView=72+Mathf.Sin(Time.time*35)*4;}return;}
+        if(power<=0){power=0;leftClosed=rightClosed=false;monitorOpen=false;lightOn=false;if(flashlight)flashlight.enabled=false;}
+        nightTimer+=Time.deltaTime;aiTimer+=Time.deltaTime;
+        float drain = .035f + (monitorOpen ? .19f : 0f) + (leftClosed ? .21f : 0f) + (rightClosed ? .21f : 0f) + (lightOn ? .12f : 0f);
+        power=Mathf.Max(0,power-drain*Time.deltaTime);
+        if(aiTimer>9f){aiTimer=0;AdvanceThreats();}
+        if(nightTimer>=NightLength){Win();return;}
+        MovePlayer();UpdateDoors();UpdateCamera();UpdateHUD();
     }
-}
-
-public class SimpleTouchStick : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
-{
-    public RectTransform knob; public static Vector2 Axis { get; private set; } Vector2 center;
-    void Start() { center = GetComponent<RectTransform>().sizeDelta * .5f; }
-    public void OnPointerDown(PointerEventData e) { OnDrag(e); }
-    public void OnDrag(PointerEventData e) { Vector2 local; RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)transform, e.position, e.pressEventCamera, out local); Vector2 delta = Vector2.ClampMagnitude(local - center, 62f); Axis = delta / 62f; if (knob) knob.anchoredPosition = delta; }
-    public void OnPointerUp(PointerEventData e) { Axis = Vector2.zero; if (knob) knob.anchoredPosition = Vector2.zero; }
-}
-
-public class ExplorerController : MonoBehaviour
-{
-    Rigidbody rb;
-    void Start() { rb = GetComponent<Rigidbody>(); }
-    void Update()
+    void MovePlayer()
     {
-        float x = Input.GetAxisRaw("Horizontal"), z = Input.GetAxisRaw("Vertical");
-        if (SimpleTouchStick.Axis.sqrMagnitude > .01f) { x = SimpleTouchStick.Axis.x; z = SimpleTouchStick.Axis.y; }
-        Vector3 forward = Camera.main ? Camera.main.transform.forward : Vector3.forward; forward.y = 0; forward.Normalize();
-        Vector3 right = Camera.main ? Camera.main.transform.right : Vector3.right; right.y = 0; right.Normalize(); Vector3 move = forward * z + right * x;
-        if (move.sqrMagnitude > .05f) { rb.MovePosition(transform.position + move.normalized * 5.5f * Time.deltaTime); transform.forward = Vector3.Lerp(transform.forward, move.normalized, Time.deltaTime * 10f); }
-        if (Input.GetKeyDown(KeyCode.Space) && Mathf.Abs(rb.velocity.y) < .1f) rb.AddForce(Vector3.up * 6, ForceMode.VelocityChange);
+        if(monitorOpen)return;
+        float x=moveStick?SimpleTouchStick.Axis.x:0,y=moveStick?SimpleTouchStick.Axis.y:0;
+        if(Input.GetKey(KeyCode.A))x=-1;if(Input.GetKey(KeyCode.D))x=1;if(Input.GetKey(KeyCode.W))y=1;if(Input.GetKey(KeyCode.S))y=-1;
+        Vector3 move=playerRoot.right*x+playerRoot.forward*y;
+        if(move.sqrMagnitude>1)move.Normalize();
+        controller.Move(move*2.1f*Time.deltaTime+Vector3.down*2.2f*Time.deltaTime);
+        playerRoot.position=new Vector3(Mathf.Clamp(playerRoot.position.x,-3.9f,3.9f),playerRoot.position.y,Mathf.Clamp(playerRoot.position.z,-3.7f,2.75f));
     }
+    public void LookDrag(Vector2 delta){if(monitorOpen||ended)return;yaw+=delta.x*.18f;pitch=Mathf.Clamp(pitch-delta.y*.14f,-27,24);}
+    void UpdateCamera()
+    {
+        if(monitorOpen){var p=cameraPositions[cameraIndex];gameCamera.transform.position=p;Vector3 focus=cameraIndex==1?new Vector3(-5,1,1):cameraIndex==2?new Vector3(5,1,1):new Vector3(0,1,0);gameCamera.transform.rotation=Quaternion.LookRotation(focus-p,Vector3.up);gameCamera.fieldOfView=58;}
+        else{gameCamera.transform.localPosition=new Vector3(0,1.58f,0);gameCamera.transform.localRotation=Quaternion.Euler(pitch,yaw,0);gameCamera.fieldOfView=72;}
+    }
+    void UpdateDoors()
+    {
+        if(leftDoor)leftDoor.position=new Vector3(-4.88f,leftClosed?1.4f:4.5f,1);
+        if(rightDoor)rightDoor.position=new Vector3(4.88f,rightClosed?1.4f:4.5f,1);
+        leftDoorButton.GetComponentInChildren<Text>().text=leftClosed?"OESTE: CERRADA":"PUERTA OESTE";
+        rightDoorButton.GetComponentInChildren<Text>().text=rightClosed?"ESTE: CERRADA":"PUERTA ESTE";
+        lightButton.GetComponentInChildren<Text>().text=lightOn?"LUZ: ENCENDIDA":"LUZ";
+    }
+    void AdvanceThreats()
+    {
+        float difficulty=Mathf.Clamp01(nightTimer/NightLength);
+        if(leftThreat){float x=leftThreat.position.x;if(x<-6)x+=Mathf.Lerp(1.2f,2.1f,difficulty);else if(!leftClosed){TriggerLoss("EL VIGILANTE TE ENCONTRÓ");return;}else x=-14;leftThreat.position=new Vector3(x,0,1);}
+        if(rightThreat){float x=rightThreat.position.x;if(x>6)x-=Random.value<Mathf.Lerp(.45f,.8f,difficulty)?Mathf.Lerp(1.2f,2.2f,difficulty):0;else if(!rightClosed){TriggerLoss("LA FIGURA TE ENCONTRÓ");return;}else x=14;rightThreat.position=new Vector3(x,0,1);}
+        // Face the office when close to the entrance
+        if(leftThreat)leftThreat.rotation=Quaternion.Euler(0,90,0);if(rightThreat)rightThreat.rotation=Quaternion.Euler(0,-90,0);
+    }
+    void UpdateHUD()
+    {
+        int hour=Mathf.Min(6,Mathf.FloorToInt(nightTimer/NightLength*6));string time=hour==0?"12:00 AM":hour+":00 AM";
+        statusText.text=time+"\nNOCHE 1";
+        powerFill.rectTransform.anchorMin=new Vector2(0,0);powerFill.rectTransform.anchorMax=new Vector2(power/100f,1);powerFill.rectTransform.offsetMin=new Vector2(3,3);powerFill.rectTransform.offsetMax=new Vector2(-3,-3);
+        powerFill.color=power>40?new Color(.3f,.85f,.46f):power>18?new Color(1f,.63f,.12f):new Color(.95f,.16f,.12f);
+        if(monitorOpen)cameraText.text=cameraNames[cameraIndex]+"\nToca SIGUIENTE CAM para cambiar";
+        if(power<=0&&!monitorOpen){messageText.gameObject.SetActive(true);messageText.text="SIN ENERGÍA\nNo hagas ruido...";}
+    }
+    void TriggerLoss(string text){ended=true;monitorOpen=false;messageText.gameObject.SetActive(true);messageText.text=text+"\n\nNOCHE TERMINADA";scareTime=2.5f;}
+    void Win(){ended=true;messageText.gameObject.SetActive(true);messageText.text="6:00 AM\n\nSOBREVIVISTE A LA NOCHE";}
 }
 
-public class CameraFollow : MonoBehaviour
+public class SimpleTouchStick : MonoBehaviour,IPointerDownHandler,IDragHandler,IPointerUpHandler
 {
-    Transform target; float yaw; float pitch = 20;
-    void LateUpdate()
-    {
-        if (!target) { var p = GameObject.Find("Explorer"); if (p) target = p.transform; else return; }
-        if (Input.GetMouseButton(0)) { yaw += Input.GetAxis("Mouse X") * 3; pitch -= Input.GetAxis("Mouse Y") * 2; }
-        if (Input.touchCount > 0) { var t = Input.GetTouch(0); if (t.position.x > Screen.width * .42f && t.phase == TouchPhase.Moved) { yaw += t.deltaPosition.x * .12f; pitch -= t.deltaPosition.y * .08f; } }
-        pitch = Mathf.Clamp(pitch, 8, 65); Quaternion rot = Quaternion.Euler(pitch, yaw, 0); transform.position = target.position + rot * new Vector3(0, 2, -7); transform.LookAt(target.position + Vector3.up * 1.25f);
-    }
+    public RectTransform knob;public static Vector2 Axis{get;private set;}Vector2 center;
+    void Start(){center=GetComponent<RectTransform>().sizeDelta*.5f;}
+    public void OnPointerDown(PointerEventData e){OnDrag(e);}
+    public void OnDrag(PointerEventData e){Vector2 local;if(RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)transform,e.position,e.pressEventCamera,out local)){Vector2 d=Vector2.ClampMagnitude(local-center,53);Axis=d/53;if(knob)knob.anchoredPosition=d;}}
+    public void OnPointerUp(PointerEventData e){Axis=Vector2.zero;if(knob)knob.anchoredPosition=Vector2.zero;}
+}
+public class TouchLookArea:MonoBehaviour,IPointerDownHandler,IDragHandler
+{
+    Vector2 last;bool held;
+    public void OnPointerDown(PointerEventData e){last=e.position;held=true;}
+    public void OnDrag(PointerEventData e){if(!held)return;Vector2 d=e.position-last;last=e.position;if(WorldBootstrap.Instance)WorldBootstrap.Instance.LookDrag(d);}
 }
