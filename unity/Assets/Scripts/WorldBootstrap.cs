@@ -270,7 +270,7 @@ public class WorldBootstrap : MonoBehaviour
     Transform MakeThreat(string name, Color color, Vector3 pos)
     {
         var root=new GameObject(name).transform;root.position=pos;
-        var bodyCollider=root.gameObject.AddComponent<CapsuleCollider>();bodyCollider.height=2.7f;bodyCollider.radius=.52f;bodyCollider.center=new Vector3(0,1.35f,0);
+        var bodyCollider=root.gameObject.AddComponent<CapsuleCollider>();bodyCollider.height=2.7f;bodyCollider.radius=.52f;bodyCollider.center=new Vector3(0,1.35f,0);bodyCollider.isTrigger=true;
         var actor=root.gameObject.AddComponent<MimicActor>();actor.modelFile="the_mimic_dlc.glb";actor.modelScale=1f;
         return root;
     }
@@ -463,14 +463,14 @@ public class WorldBootstrap : MonoBehaviour
         if(whistleStunTimer<=0f&&distance>1.1f)
         {
             Vector3 direction=toPlayer.normalized;
-            Vector3 origin=hunter.position+Vector3.up*.8f;
-            // Keep the pursuer from walking straight through tables and columns.
-            if(Physics.Raycast(origin,direction,out RaycastHit hit,1.6f))
+            Vector3 origin=hunter.position+Vector3.up*1.25f;
+            // Ignore the hunter's own trigger capsule; divert around solid furniture.
+            if(Physics.Raycast(origin,direction,out RaycastHit hit,1.6f,Physics.DefaultRaycastLayers,QueryTriggerInteraction.Ignore))
             {
                 if(hit.transform!=playerRoot&&hit.transform!=hunter&&!hit.transform.IsChildOf(hunter))
                 {
                     Vector3 right=Vector3.Cross(Vector3.up,direction).normalized;
-                    bool rightFree=!Physics.Raycast(origin,right,1.2f);
+                    bool rightFree=!Physics.Raycast(origin,right,1.2f,Physics.DefaultRaycastLayers,QueryTriggerInteraction.Ignore);
                     direction=rightFree?right:-right;
                 }
             }
