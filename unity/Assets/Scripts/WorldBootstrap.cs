@@ -256,7 +256,7 @@ public class WorldBootstrap : MonoBehaviour
     void BuildHUD()
     {
         var eventObj=new GameObject("Touch Event System");eventObj.AddComponent<EventSystem>();eventObj.AddComponent<StandaloneInputModule>();
-        var canvasObj=new GameObject("Nightwatch HUD");var canvas=canvasObj.AddComponent<Canvas>();canvas.renderMode=RenderMode.ScreenSpaceOverlay;canvasObj.AddComponent<CanvasScaler>().uiScaleMode=CanvasScaler.ScaleWithScreenSize;canvasObj.GetComponent<CanvasScaler>().referenceResolution=new Vector2(960,540);canvasObj.GetComponent<CanvasScaler>().matchWidthOrHeight=.5f;canvasObj.AddComponent<GraphicRaycaster>();
+        var canvasObj=new GameObject("Nightwatch HUD");var canvas=canvasObj.AddComponent<Canvas>();canvas.renderMode=RenderMode.ScreenSpaceOverlay;canvasObj.AddComponent<CanvasScaler>().uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;canvasObj.GetComponent<CanvasScaler>().referenceResolution=new Vector2(960,540);canvasObj.GetComponent<CanvasScaler>().matchWidthOrHeight=.5f;canvasObj.AddComponent<GraphicRaycaster>();
         var hud=new GameObject("Gameplay Interface");hud.transform.SetParent(canvas.transform,false);gameplayHud=hud;Transform hudRoot=hud.transform;
         // Touching open screen space rotates the view; buttons and joystick sit above this layer.
         var look=Panel(hudRoot,new Vector2(.2f,0),Vector2.zero,new Vector2(520,540),new Color(0,0,0,.001f));
