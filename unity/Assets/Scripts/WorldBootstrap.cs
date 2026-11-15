@@ -17,6 +17,7 @@ public class WorldBootstrap : MonoBehaviour
     AudioSource ambienceSource, sfxSource, leftThreatAudio, rightThreatAudio;
     AudioClip ambienceClip, monsterGrowlClip, zombieGroanClip, doorSlamClip;
     Material wallMat, floorMat, metalMat, trimMat, eyeMat;
+    string startupFailure;
     bool leftClosed, rightClosed, monitorOpen, lightOn, ended;
     float yaw, pitch = 2f, power = 100f, nightTimer, aiTimer, scareTime;
     int cameraIndex = 0;
@@ -41,12 +42,50 @@ public class WorldBootstrap : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this; SetLandscape();
+        EnsureFallbackCamera();
     }
     void Start()
     {
         Application.targetFrameRate = 60; QualitySettings.vSyncCount = 0;
         QualitySettings.shadows = ShadowQuality.HardOnly; QualitySettings.shadowDistance = 22;
-        BuildMaterials(); BuildOffice(); BuildPlayer(); BuildThreats(); BuildAudio(); BuildHUD(); UpdateHUD();
+        try
+        {
+            // Create the camera before generating the rest of the world. A failure later
+            // can no longer leave Unity displaying only its default grey screen.
+            BuildPlayer();
+            BuildMaterials(); BuildOffice(); BuildThreats(); BuildAudio(); BuildHUD(); UpdateHUD();
+        }
+        catch (System.Exception ex)
+        {
+            startupFailure = ex.GetType().Name + ": " + ex.Message;
+            Debug.LogError("GAME STARTUP FAILED: " + ex);
+        }
+    }
+    void EnsureFallbackCamera()
+    {
+        gameCamera = Camera.main;
+        if (gameCamera == null)
+        {
+            var cameraObject = new GameObject("Emergency Main Camera");
+            cameraObject.tag = "MainCamera";
+            gameCamera = cameraObject.AddComponent<Camera>();
+        }
+        gameCamera.enabled = true;
+        gameCamera.clearFlags = CameraClearFlags.SolidColor;
+        gameCamera.backgroundColor = new Color(.025f,.035f,.05f);
+        gameCamera.fieldOfView = 72f;
+        gameCamera.nearClipPlane = .08f;
+        gameCamera.farClipPlane = 70f;
+        if (gameCamera.GetComponent<AudioListener>() == null)
+            gameCamera.gameObject.AddComponent<AudioListener>();
+        if (cameraRig == null && playerRoot == null)
+            gameCamera.transform.SetPositionAndRotation(new Vector3(0,1.58f,-1.2f), Quaternion.identity);
+    }
+    void OnGUI()
+    {
+        if (string.IsNullOrEmpty(startupFailure)) return;
+        GUI.color = Color.white;
+        GUI.Box(new Rect(12, 12, Screen.width - 24, 100), "ERROR AL INICIAR EL JUEGO\n" + startupFailure + "\nConsulta el log de Unity para el detalle.");
     }
 
     void BuildMaterials()
@@ -123,10 +162,10 @@ public class WorldBootstrap : MonoBehaviour
     {
         playerRoot=new GameObject("First Person Security Guard").transform;playerRoot.position=new Vector3(0,0,-1.2f);
         controller=playerRoot.gameObject.AddComponent<CharacterController>();controller.height=1.8f;controller.radius=.34f;controller.center=new Vector3(0,.9f,0);controller.stepOffset=.25f;controller.slopeLimit=45;controller.skinWidth=.04f;
-        cameraRig=new GameObject("First Person Camera").transform;cameraRig.SetParent(playerRoot,false);cameraRig.localPosition=new Vector3(0,1.58f,0);
-        gameCamera=cameraRig.gameObject.AddComponent<Camera>();gameCamera.tag="MainCamera";gameCamera.fieldOfView=72;gameCamera.nearClipPlane=.08f;gameCamera.farClipPlane=70;gameCamera.clearFlags=CameraClearFlags.SolidColor;gameCamera.backgroundColor=new Color(.025f,.035f,.05f);
-        gameCamera.gameObject.AddComponent<AudioListener>();
-        flashlight = gameCamera.gameObject.AddComponent<Light>(); flashlight.type = LightType.Spot; flashlight.range = 14f; flashlight.spotAngle = 58f; flashlight.intensity = 2.3f; flashlight.shadows = LightShadows.None; flashlight.color = new Color(.72f,.82f,1f); flashlight.enabled = false;
+        EnsureFallbackCamera();
+        cameraRig=gameCamera.transform;cameraRig.SetParent(playerRoot,false);cameraRig.localPosition=new Vector3(0,1.58f,0);cameraRig.localRotation=Quaternion.identity;
+        gameCamera.tag="MainCamera";gameCamera.enabled=true;gameCamera.fieldOfView=72;gameCamera.nearClipPlane=.08f;gameCamera.farClipPlane=70;gameCamera.clearFlags=CameraClearFlags.SolidColor;gameCamera.backgroundColor=new Color(.025f,.035f,.05f);
+        flashlight = gameCamera.GetComponent<Light>();if(!flashlight)flashlight=gameCamera.gameObject.AddComponent<Light>(); flashlight.type = LightType.Spot; flashlight.range = 14f; flashlight.spotAngle = 58f; flashlight.intensity = 2.3f; flashlight.shadows = LightShadows.None; flashlight.color = new Color(.72f,.82f,1f); flashlight.enabled = false;
     }
 
     Transform MakeThreat(string name, Color color, Vector3 pos)
@@ -197,6 +236,8 @@ public class WorldBootstrap : MonoBehaviour
 
     void Update()
     {
+        if(gameCamera==null){EnsureFallbackCamera();return;}
+        if(startupFailure!=null)return;
         if(ended){if(scareTime>0){scareTime-=Time.deltaTime;gameCamera.fieldOfView=72+Mathf.Sin(Time.time*35)*4;}return;}
         if(power<=0){power=0;leftClosed=rightClosed=false;monitorOpen=false;lightOn=false;if(flashlight)flashlight.enabled=false;}
         nightTimer+=Time.deltaTime;aiTimer+=Time.deltaTime;
